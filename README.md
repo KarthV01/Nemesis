@@ -20,6 +20,20 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 This creates `.venv` (Python 3.10, required because CC4 pins numpy 1.26 / torch 2.2), installs CybORG and its
 RL dependencies (RLlib, Stable-Baselines3, PettingZoo, PyTorch), and runs a smoke-test episode.
 
+## Setup (Linux)
+
+```bash
+git clone --recurse-submodules https://github.com/KarthV01/Nemesis
+cd Nemesis
+bash setup.sh   # installs uv if missing; CPU-only PyTorch unless TORCH_CUDA=1
+```
+
+## Cloud training on Docker Agentic Platform
+
+See [docs/docker-sandbox.md](docs/docker-sandbox.md) to run time-budgeted training in a Docker sandbox
+(`scripts/sandbox_train.sh`, which pushes results to a `runs/<id>` branch) and Claude Code on Sonnet 5.5
+with your Claude subscription (`scripts/sandbox_claude.sh`).
+
 ## Usage
 
 ```powershell

@@ -18,3 +18,4 @@ env/
 checkpoints/
 logs/
 ray_results/
+runs/
