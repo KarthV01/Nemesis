@@ -26,6 +26,7 @@ from CybORG.Simulator.Scenarios import EnterpriseScenarioGenerator
 
 NUM_AGENTS = 5
 EPISODE_LENGTH = 500
+MAX_AUTO_WORKERS = 8
 POLICY_MAP = {f"blue_agent_{i}": f"Agent{i}" for i in range(NUM_AGENTS)}
 
 
@@ -44,14 +45,20 @@ def policy_mapper(agent_id, episode, worker=None, **kwargs):
 
 
 def default_workers() -> int:
-    # Leave one core for the driver/learner.
-    return max(1, (os.cpu_count() or 2) - 1)
+    # Leave one core for the driver/learner and avoid unexpectedly spawning dozens of
+    # memory-heavy Ray workers on large hosts. Users can still opt in with --workers.
+    return max(1, min(MAX_AUTO_WORKERS, (os.cpu_count() or 2) - 1))
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--iterations", type=int, default=50)
-    parser.add_argument("--workers", type=int, default=None, help="rollout workers (default: CPU count - 1)")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help=f"rollout workers (default: CPU count - 1, capped at {MAX_AUTO_WORKERS})",
+    )
     parser.add_argument("--steps", type=int, default=EPISODE_LENGTH, help="episode length")
     parser.add_argument("--batch-size", type=int, default=4000, help="env steps per training iteration")
     parser.add_argument("--checkpoint-dir", default="checkpoints/ppo_cc4")

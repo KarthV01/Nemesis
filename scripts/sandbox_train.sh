@@ -59,7 +59,18 @@ fi
 # Commit the results on a fresh branch in a throwaway worktree so the current checkout
 # (and whatever branch it is on) is left untouched.
 BRANCH="runs/$RUN_ID"
-PUSH_WT="$(mktemp -d)/results"
+PUSH_TMP="$(mktemp -d)"
+PUSH_WT="$PUSH_TMP/results"
+
+cleanup() {
+    if git worktree list --porcelain | grep -Fqx "worktree $PUSH_WT"; then
+        git worktree remove --force "$PUSH_WT" || true
+    fi
+    rm -f "$PUSH_TMP/git-askpass.sh"
+    rmdir "$PUSH_TMP" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 git worktree add -q -b "$BRANCH" "$PUSH_WT" HEAD
 mkdir -p "$PUSH_WT/runs"
 cp -r "$RUN_DIR" "$PUSH_WT/runs/"
@@ -69,16 +80,40 @@ git -C "$PUSH_WT" \
     -c user.email="${GIT_AUTHOR_EMAIL:-$(git config user.email || echo 'sandbox@nemesis.local')}" \
     commit -q -m "Training results for run $RUN_ID"
 
-# git doesn't read GITHUB_TOKEN by itself; hand it over via a credential helper when present.
-PUSH_AUTH=()
+# Keep the token out of command-line arguments, where process listings could expose it.
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-    PUSH_AUTH=(-c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f')
+    ASKPASS="$PUSH_TMP/git-askpass.sh"
+    cat > "$ASKPASS" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+    *Username*) printf '%s\n' 'x-access-token' ;;
+    *Password*) printf '%s\n' "$GITHUB_TOKEN" ;;
+    *) exit 1 ;;
+esac
+EOF
+    chmod 700 "$ASKPASS"
 fi
-if git -C "$PUSH_WT" "${PUSH_AUTH[@]}" push -q origin "$BRANCH"; then
+
+PUSH_STATUS=0
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    GIT_ASKPASS="$ASKPASS" GIT_TERMINAL_PROMPT=0 \
+        git -C "$PUSH_WT" -c credential.helper= push -q origin "$BRANCH" || PUSH_STATUS=$?
+else
+    git -C "$PUSH_WT" push -q origin "$BRANCH" || PUSH_STATUS=$?
+fi
+
+if [ "$PUSH_STATUS" -eq 0 ]; then
     echo "Pushed results to branch $BRANCH"
 else
     echo "Push failed (is a GITHUB_TOKEN secret configured for this sandbox?)."
     copy_hint
 fi
 git worktree remove --force "$PUSH_WT"
-exit "$TRAIN_STATUS"
+rm -f "$PUSH_TMP/git-askpass.sh"
+rmdir "$PUSH_TMP" 2>/dev/null || true
+trap - EXIT
+
+if [ "$TRAIN_STATUS" -ne 0 ]; then
+    exit "$TRAIN_STATUS"
+fi
+exit "$PUSH_STATUS"

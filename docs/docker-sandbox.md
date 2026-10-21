@@ -37,8 +37,9 @@ Choose **New**, then:
 - **Kit:** `shell`. The Claude Code kit asks for an Anthropic API key, while the shell kit
   works with the subscription token, and `sandbox_claude.sh` installs Claude Code itself.
 - **Secrets:** attach `CLAUDE_CODE_OAUTH_TOKEN` and `GITHUB_TOKEN`.
-- **Compute:** CybORG training is CPU-bound, so more CPUs mean more rollout workers. The
-  script uses every core except one.
+- **Compute:** CybORG training is CPU-bound, so more CPUs can support more rollout workers.
+  The script automatically uses up to eight workers; pass `--workers N` to tune this for
+  the sandbox's CPU and memory limits.
 - **Run for:** at least the training budget plus about 10 minutes. The default 1 hour fits
   the default 50-minute budget. You can't change the timer after launch, and files that
   exist only in the sandbox are lost when it's deleted.
