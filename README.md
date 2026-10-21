@@ -1,5 +1,9 @@
 # Nemesis
-Adversarial multi-agent reinforcement learning framework where autonomous cybersecurity agents evolve through offensive and defensive self-play.
+
+> [*Νέμεσις*](https://www.theoi.com/Daimon/Nemesis.html) — the Greek goddess of retribution, who brought **hubris** back within its limits. Pausanias tells of the Persians arriving at Marathon with a block of marble for the victory monument they expected to build. After their defeat, that same stone was carved into a statue of Nemesis. Their certainty of winning became a monument to the cost of assuming they could not lose.
+> Nemesis gives a security policy an adversary that can expose the distance between appearing capable and surviving an attack.
+
+A multi-agent reinforcement learning framework for cybersecurity, built around repeated attack-and-defense episodes in a simulated enterprise network. The current training path uses RLlib and PPO to train five blue-team defenders against CybORG's scripted red attacker, saving policy checkpoints between runs. Offensive and defensive self-play is the broader direction.
 
 Built on [CybORG](https://github.com/cage-challenge/cage-challenge-4) (CAGE Challenge 4), vendored as a git submodule in `external/cage-challenge-4`.
 
