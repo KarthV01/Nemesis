@@ -1,6 +1,6 @@
 # Nemesis
 
-> [*Νέμεσις*](https://www.theoi.com/Daimon/Nemesis.html) — the Greek goddess of retribution, who brought **hubris** back within its limits. Pausanias tells of the Persians arriving at Marathon with a block of marble for the victory monument they expected to build. After their defeat, that same stone was carved into a statue of Nemesis. Their certainty of winning became a monument to the cost of assuming they could not lose.
+> [*Νέμεσις*](https://www.theoi.com/Daimon/Nemesis.html) — the Greek goddess of divine retribution and rightful measure. In Hesiod's telling, she was a daughter of **Nyx**, the primordial goddess of night. She punished **hubris**: the arrogance of those who believed their power or good fortune placed them beyond consequence. Artists gave her a measuring rod to mark the limits, a bridle to restrain excess, and scales to weigh what was due. Her domain was the restoration of balance whenever pride, cruelty, or undeserved fortune disturbed it. She was the reckoning that arrived when confidence outran judgment.
 > Nemesis gives a security policy an adversary that can expose the distance between appearing capable and surviving an attack.
 
 A multi-agent reinforcement learning framework for cybersecurity, built around repeated attack-and-defense episodes in a simulated enterprise network. The current training path uses RLlib and PPO to train five blue-team defenders against CybORG's scripted red attacker, saving policy checkpoints between runs. Offensive and defensive self-play is the broader direction.
