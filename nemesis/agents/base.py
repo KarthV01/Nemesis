@@ -54,12 +54,24 @@ class NemesisAgent(BaseAgent):
     #: Ordered, most-preferred first. Subclasses override this.
     action_priority: List[str] = []
 
+    #: When True, the agent only ever takes actions named in ``action_priority``;
+    #: if none are legal it returns ``Sleep`` instead of reaching for some other
+    #: legal action. Specialists set this so a captain can tell "I have nothing
+    #: useful this step" (Sleep) apart from "here is my move", and fall through
+    #: to the next specialist. Generalists leave it False.
+    strict_priority: bool = False
+
     def __init__(self, name: str = None, epsilon: float = 0.0, np_random=None):
         super().__init__(name, np_random)
         self.epsilon = epsilon
         # Maps each action class -> its constructor parameters, filled lazily by
         # set_initial_values() the first time CybORG hands us an action space.
         self.action_params: Dict[type, object] = None
+        # Hosts/IPs a commanding captain wants this agent to act on this step.
+        # When one of these is a legal value for a target parameter, it is chosen
+        # over a random pick, so e.g. a medic treats the host that is actually
+        # compromised. Empty means "no preference, pick any legal target".
+        self.preferred_targets: List = []
 
     # ------------------------------------------------------------------ #
     # Action selection
@@ -95,10 +107,16 @@ class NemesisAgent(BaseAgent):
     def _by_priority(self, legal: Dict[type, bool]) -> List[type]:
         """Legal action classes, sorted by this agent's preference list.
 
-        Anything not named in ``action_priority`` sorts last (kept so the agent
-        still does *something* if the scenario offers an unexpected action).
+        Anything not named in ``action_priority`` sorts last (kept so a
+        generalist still does *something* if the scenario offers an unexpected
+        action). A ``strict_priority`` agent drops the unlisted actions entirely.
         """
         rank = {name: i for i, name in enumerate(self.action_priority)}
+        if self.strict_priority:
+            return sorted(
+                (cls for cls in legal if cls.__name__ in rank),
+                key=lambda cls: rank[cls.__name__],
+            )
         last = len(rank)
         return sorted(legal, key=lambda cls: rank.get(cls.__name__, last))
 
@@ -124,7 +142,9 @@ class NemesisAgent(BaseAgent):
             options = [v for v, ok in action_space[param_name].items() if ok]
             if not options:
                 return None
-            kwargs[param_name] = self.np_random.choice(options)
+            # Honour a captain's requested target when it is a legal option.
+            wanted = [t for t in self.preferred_targets if t in options]
+            kwargs[param_name] = self.np_random.choice(wanted or options)
         return action_class(**kwargs)
 
     # ------------------------------------------------------------------ #
