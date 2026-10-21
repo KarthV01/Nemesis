@@ -121,7 +121,11 @@ class NemesisAgent(BaseAgent):
         return sorted(legal, key=lambda cls: rank.get(cls.__name__, last))
 
     def _random_order(self, legal: Dict[type, bool]) -> List[type]:
-        classes = list(legal)
+        classes = [
+            cls
+            for cls in legal
+            if not self.strict_priority or cls.__name__ in self.action_priority
+        ]
         self.np_random.shuffle(classes)
         return classes
 
