@@ -43,6 +43,9 @@ with your Claude subscription (`scripts/sandbox_claude.sh`).
 # Train independent PPO policies for the 5 blue agents (RLlib); checkpoints go to checkpoints/ppo_cc4
 .venv\Scripts\python.exe scripts\train_ppo_rllib.py --iterations 50 --workers 4
 
+# Watch red vs. blue live in a terminal-style web page at http://localhost:8000
+$env:PYTHONPATH="external\cage-challenge-4"; .venv\Scripts\python.exe -m nemesis.live --delay 0.75
+
 # CybORG's own test suite (slow)
 cd external\cage-challenge-4; ..\..\.venv\Scripts\python.exe -m pytest CybORG\Tests\test_cc4
 ```
