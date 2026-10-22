@@ -2,17 +2,25 @@
 
 Adapted from external/cage-challenge-4/CybORG/Evaluation/training_example/TrainingRay.py.
 
+Each checkpoint also exports every agent's policy weights as a small PyTorch
+file, weights/rllib_ppo/blue_agent_<i>/policy.pt, meant to live in git; with
+--push-branch they are committed to that branch and pushed periodically.
+
 Usage:
     .venv\\Scripts\\python.exe scripts\\train_ppo_rllib.py --iterations 50
     .venv/bin/python scripts/train_ppo_rllib.py --iterations 1000 --time-budget-min 50
+    .venv/bin/python scripts/train_ppo_rllib.py --iterations 1000 --push-branch training/weights
 """
 import argparse
 import csv
 import os
+import sys
 import time
 import warnings
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ray
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -23,6 +31,9 @@ from CybORG import CybORG
 from CybORG.Agents import SleepAgent, EnterpriseGreenAgent, FiniteStateRedAgent
 from CybORG.Agents.Wrappers import EnterpriseMAE
 from CybORG.Simulator.Scenarios import EnterpriseScenarioGenerator
+
+from nemesis.git_sync import PeriodicGitSync
+from nemesis.weights import WEIGHTS_ROOT, export_rllib_weights
 
 NUM_AGENTS = 5
 EPISODE_LENGTH = 500
@@ -69,6 +80,9 @@ def main() -> None:
         default=None,
         help="stop and save a final checkpoint once this many minutes have elapsed",
     )
+    parser.add_argument("--weights-dir", default=str(WEIGHTS_ROOT), help="where policy.pt files are exported")
+    parser.add_argument("--push-branch", default=None, help="commit + push weights to this branch (e.g. training/weights)")
+    parser.add_argument("--push-every-min", type=float, default=30.0, help="minutes between weight pushes")
     args = parser.parse_args()
     workers = args.workers if args.workers is not None else default_workers()
 
@@ -99,6 +113,8 @@ def main() -> None:
     algo = config.build()
     print(f"Training with {workers} rollout workers")
 
+    sync = PeriodicGitSync([args.weights_dir], args.push_branch, every_minutes=args.push_every_min) if args.push_branch else None
+
     checkpoint_dir = os.path.abspath(args.checkpoint_dir)
     os.makedirs(checkpoint_dir, exist_ok=True)
     metrics_path = os.path.join(checkpoint_dir, "metrics.csv")
@@ -126,6 +142,15 @@ def main() -> None:
         )
         if i % args.checkpoint_every == 0 or i == args.iterations or out_of_time:
             print("  checkpoint ->", algo.save(checkpoint_dir).checkpoint.path, flush=True)
+            export_rllib_weights(
+                algo, POLICY_MAP, root=args.weights_dir, iteration=i,
+                extra={"episode_reward_mean": reward, "episode_length": args.steps},
+            )
+            print(f"  weights    -> {os.path.join(args.weights_dir, 'rllib_ppo')}", flush=True)
+            if sync is not None:
+                message = f"RLlib PPO weights for {NUM_AGENTS} blue agents at iteration {i}"
+                final = i == args.iterations or out_of_time
+                sync.push(message) if final else sync.maybe_push(message)
         if out_of_time:
             print(f"Time budget of {args.time_budget_min} min reached after {i} iterations")
             break

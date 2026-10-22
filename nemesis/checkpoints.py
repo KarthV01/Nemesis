@@ -34,7 +34,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import stable_baselines3
 from stable_baselines3.common.base_class import BaseAlgorithm
@@ -238,6 +238,9 @@ class LearnedCheckpointCallback(BaseCallback):
         Stored in every checkpoint's ``meta.json``.
     include_replay_buffer : bool
         See ``save_learned``.
+    on_save : callable, optional
+        Called as ``on_save(model, checkpoint_path)`` after every save, e.g. to
+        export weights or push them to git.
     """
 
     def __init__(
@@ -248,6 +251,7 @@ class LearnedCheckpointCallback(BaseCallback):
         keep_last: Optional[int] = 3,
         extra: Optional[Dict[str, Any]] = None,
         include_replay_buffer: bool = True,
+        on_save: Optional[Callable[[BaseAlgorithm, Path], None]] = None,
         verbose: int = 0,
     ):
         super().__init__(verbose)
@@ -258,6 +262,7 @@ class LearnedCheckpointCallback(BaseCallback):
         self.keep_last = keep_last
         self.extra = extra
         self.include_replay_buffer = include_replay_buffer
+        self.on_save = on_save
         self._last_saved = 0
 
     def _on_training_start(self) -> None:
@@ -284,6 +289,8 @@ class LearnedCheckpointCallback(BaseCallback):
         self._last_saved = self.num_timesteps
         if self.verbose:
             print(f"Saved SB3 checkpoint -> {path}")
+        if self.on_save is not None:
+            self.on_save(self.model, path)
 
 
 def _write_latest(root: Path, name: str) -> None:

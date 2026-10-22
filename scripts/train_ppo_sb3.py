@@ -6,10 +6,17 @@ Ctrl+C, and at the end. Re-running the same command resumes from the latest
 checkpoint and trains until --timesteps total, so a run can be stopped and
 continued at will. Pass --fresh to start over.
 
+Alongside each checkpoint, the policy network's weights are exported as a small
+PyTorch file, weights/sb3_ppo/<agent>/policy.pt, meant to live in git. With
+--push-branch they are committed to that branch and pushed every
+--push-every-min minutes and at the end (without touching the checked-out
+branch; see nemesis.git_sync).
+
 Usage:
     $env:PYTHONPATH="external\\cage-challenge-4"
     .venv\\Scripts\\python.exe scripts\\train_ppo_sb3.py --agent blue_agent_0 --timesteps 200000
     .venv/bin/python scripts/train_ppo_sb3.py --agent blue_agent_4 --n-envs 4 --time-budget-min 50
+    .venv/bin/python scripts/train_ppo_sb3.py --agent blue_agent_0 --push-branch training/weights
 """
 import argparse
 import os
@@ -29,6 +36,8 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 from nemesis.blue_env import EPISODE_LENGTH, SingleBlueEnv
 from nemesis.checkpoints import LearnedCheckpointCallback, list_checkpoints, load_learned, save_learned
+from nemesis.git_sync import PeriodicGitSync
+from nemesis.weights import WEIGHTS_ROOT, export_sb3_weights
 
 
 class StopAfterMinutes(BaseCallback):
@@ -55,6 +64,9 @@ def main() -> None:
     parser.add_argument("--time-budget-min", type=float, default=None)
     parser.add_argument("--fresh", action="store_true", help="discard existing checkpoints and start over")
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--weights-dir", default=str(WEIGHTS_ROOT), help="where policy.pt files are exported")
+    parser.add_argument("--push-branch", default=None, help="commit + push weights to this branch (e.g. training/weights)")
+    parser.add_argument("--push-every-min", type=float, default=30.0, help="minutes between weight pushes")
     args = parser.parse_args()
 
     checkpoint_dir = os.path.abspath(args.checkpoint_dir or os.path.join("checkpoints", f"sb3_{args.agent}"))
@@ -88,12 +100,22 @@ def main() -> None:
         return
 
     extra = {"agent": args.agent, "episode_length": args.steps, "red_agent": "FiniteStateRedAgent"}
+    sync = PeriodicGitSync([args.weights_dir], args.push_branch, every_minutes=args.push_every_min) if args.push_branch else None
+
+    def export_weights(model, _checkpoint=None, final=False):
+        path = export_sb3_weights(model, args.agent, root=args.weights_dir, extra=extra)
+        print(f"Exported weights -> {path}")
+        if sync is not None:
+            message = f"{args.agent}: PPO weights at {model.num_timesteps} timesteps"
+            sync.push(message) if final else sync.maybe_push(message)
+
     callbacks = [
         LearnedCheckpointCallback(
             checkpoint_dir,
             save_freq=args.save_every,
             keep_last=args.keep_last or None,
             extra=extra,
+            on_save=export_weights,
             verbose=1,
         )
     ]
@@ -107,6 +129,8 @@ def main() -> None:
         print(f"\nInterrupted at {model.num_timesteps} timesteps; saved -> {path}")
     finally:
         env.close()
+    # Covers Ctrl+C too, and always pushes the final weights regardless of the interval.
+    export_weights(model, final=True)
 
 
 if __name__ == "__main__":
