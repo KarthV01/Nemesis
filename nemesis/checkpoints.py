@@ -110,7 +110,12 @@ def save_learned(
     meta = {
         "algorithm": f"{type(model).__module__}.{type(model).__qualname__}",
         "num_timesteps": int(model.num_timesteps),
-        "episodes": len(model.ep_info_buffer) if model.ep_info_buffer is not None else 0,
+        # Mean return over SB3's rolling window of recent episodes (up to 100).
+        "recent_episode_reward_mean": (
+            float(sum(ep["r"] for ep in model.ep_info_buffer) / len(model.ep_info_buffer))
+            if model.ep_info_buffer
+            else None
+        ),
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "sb3_version": stable_baselines3.__version__,
         "has_replay_buffer": has_buffer,

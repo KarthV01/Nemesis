@@ -43,6 +43,10 @@ with your Claude subscription (`scripts/sandbox_claude.sh`).
 # Train independent PPO policies for the 5 blue agents (RLlib); checkpoints go to checkpoints/ppo_cc4
 .venv\Scripts\python.exe scripts\train_ppo_rllib.py --iterations 50 --workers 4
 
+# Train one blue agent with Stable-Baselines3 PPO; checkpoints (weights, optimizer, normalisation stats)
+# go to checkpoints/sb3_<agent> every --save-every steps and on Ctrl+C. Re-run to resume; --fresh starts over.
+$env:PYTHONPATH="external\cage-challenge-4"; .venv\Scripts\python.exe scripts\train_ppo_sb3.py --agent blue_agent_0 --timesteps 200000
+
 # Watch red vs. blue live in a terminal-style web page at http://localhost:8000
 $env:PYTHONPATH="external\cage-challenge-4"; .venv\Scripts\python.exe -m nemesis.live --delay 0.75
 
