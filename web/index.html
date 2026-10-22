@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nemesis Live</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --fg: #c9d1d9;
+    --dim: #5c6670;
+    --rule: #1e242b;
+    --system: #8b949e;
+    --attack: #ff5f56;
+    --defend: #4aa8ff;
+    --reward-up: #3fb950;
+    --reward-down: #e3b341;
+    --cursor: #c9d1d9;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.55 ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 24px;
+    align-items: baseline;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: 0.08em; }
+  header .stat { color: var(--dim); }
+  header .stat b { color: var(--fg); font-weight: 400; }
+  #status.live b { color: var(--reward-up); }
+  #status.down b { color: var(--attack); }
+  header .controls { margin-left: auto; display: flex; gap: 12px; }
+  button {
+    background: none; border: 0; padding: 0; cursor: pointer;
+    font: inherit; color: var(--dim);
+  }
+  button:hover, button:focus-visible { color: var(--fg); outline: none; }
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px 24px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .line { display: flex; gap: 12px; }
+  .ts { color: var(--dim); flex: none; }
+  .tag { flex: none; width: 7ch; font-weight: 600; }
+  .msg { min-width: 0; }
+  .who { color: var(--dim); }
+  .system .tag, .system .msg { color: var(--system); }
+  .attack .tag { color: var(--attack); }
+  .defend .tag { color: var(--defend); }
+  .reward .tag, .reward .msg { color: var(--reward-up); }
+  .reward.down .tag, .reward.down .msg { color: var(--reward-down); }
+  .fail { color: var(--dim); text-decoration: line-through; }
+  .cursor {
+    display: inline-block; width: 0.6em; height: 1.1em; vertical-align: text-bottom;
+    background: var(--cursor); animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+  @media (max-width: 600px) {
+    body { font-size: 12px; }
+    .line { gap: 8px; }
+    .ts { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>NEMESIS / LIVE</h1>
+  <span class="stat" id="status">feed <b>connecting</b></span>
+  <span class="stat">episode <b id="episode">-</b></span>
+  <span class="stat">step <b id="step">-</b></span>
+  <span class="stat">blue reward <b id="total">0</b></span>
+  <span class="controls">
+    <button id="pause" type="button">[pause]</button>
+    <button id="clear" type="button">[clear]</button>
+  </span>
+</header>
+<main id="log" aria-live="polite"><div class="line" id="prompt"><span class="cursor"></span></div></main>
+
+<script>
+  const MAX_LINES = 1000;
+  const TAGS = { system: "SYSTEM", attack: "ATTACK", defend: "DEFEND", reward: "REWARD" };
+
+  const log = document.getElementById("log");
+  const prompt = document.getElementById("prompt");
+  const el = (id) => document.getElementById(id);
+  let paused = false;
+  let held = [];
+
+  function span(cls, text) {
+    const s = document.createElement("span");
+    s.className = cls;
+    s.textContent = text;
+    return s;
+  }
+
+  function render(e) {
+    const line = document.createElement("div");
+    line.className = "line " + e.kind;
+    if (e.kind === "reward" && e.reward < 0) line.classList.add("down");
+
+    const ts = new Date(e.t * 1000).toLocaleTimeString([], { hour12: false });
+    line.append(span("ts", ts), span("tag", TAGS[e.kind] || e.kind.toUpperCase()));
+
+    const msg = span("msg", "");
+    if (e.agent) {
+      msg.append(span("who", `${e.agent}${e.role ? " [" + e.role + "]" : ""}  `));
+    }
+    msg.append(span(e.success === "FALSE" ? "fail" : "", e.text));
+    if (e.success === "FALSE") msg.append(span("who", "  (failed)"));
+    line.append(msg);
+
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.insertBefore(line, prompt);
+    while (log.children.length > MAX_LINES) log.removeChild(log.firstChild);
+    if (atBottom) log.scrollTop = log.scrollHeight;
+  }
+
+  function update(e) {
+    if (e.episode !== undefined) el("episode").textContent = e.episode;
+    if (e.step !== undefined) el("step").textContent = e.step;
+    if (e.total !== undefined) el("total").textContent = (e.total > 0 ? "+" : "") + e.total;
+    if (e.kind === "system" && /started/.test(e.text)) {
+      el("step").textContent = "0";
+      el("total").textContent = "0";
+    }
+    if (paused) held.push(e); else render(e);
+  }
+
+  function setStatus(state) {
+    const s = el("status");
+    s.className = "stat " + (state === "live" ? "live" : state === "down" ? "down" : "");
+    s.querySelector("b").textContent = state;
+  }
+
+  el("pause").onclick = () => {
+    paused = !paused;
+    el("pause").textContent = paused ? "[resume]" : "[pause]";
+    if (!paused) { held.forEach(render); held = []; }
+  };
+  el("clear").onclick = () => {
+    while (log.firstChild !== prompt) log.removeChild(log.firstChild);
+  };
+
+  const source = new EventSource("/events");
+  source.onopen = () => setStatus("live");
+  source.onerror = () => setStatus(source.readyState === EventSource.CLOSED ? "down" : "reconnecting");
+  source.onmessage = (msg) => update(JSON.parse(msg.data));
+</script>
+</body>
+</html>
