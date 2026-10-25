@@ -1,0 +1,47 @@
+# Isolated lab for Nemesis sandbox evaluation. AUTHORIZED, ISOLATED use ONLY.
+#
+# This brings up ONE intentionally-vulnerable target and ONE defensive sidecar on
+# a single INTERNAL network. `internal: true` means the network has no gateway,
+# so neither container can reach the host or the internet, and no `ports:` are
+# published, so nothing is reachable from the host. The two containers can reach
+# each other by service name via Docker's embedded DNS.
+#
+#   docker compose -f nemesis/sandbox/targets/docker-compose.yml up --build
+#
+# Do NOT add `ports:`, a non-internal network, extra capabilities, or a bind of
+# the Docker socket — any of those breaks the isolation this lab depends on.
+
+networks:
+  labnet:
+    driver: bridge
+    internal: true          # no gateway -> no host/internet access
+
+services:
+  vulnerable-web:
+    build: ./vulnerable_web
+    image: nemesis-sbx/vulnerable-web
+    container_name: nemesis-sbx-vulnerable-web
+    networks: [labnet]
+    # No `ports:` — deliberately unreachable from the host.
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 256m
+    restart: "no"
+
+  defender:
+    build: ./defender
+    image: nemesis-sbx/defender
+    container_name: nemesis-sbx-defender
+    networks: [labnet]
+    depends_on: [vulnerable-web]
+    environment:
+      TARGET_URL: "http://vulnerable-web:8080"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 128m
+    restart: "no"
