@@ -1,0 +1,143 @@
+/* Nemesis dashboard — terminal-style, dark-first (matches nemesis.live).
+   Dark is the selected and only theme: a terminal aesthetic, not an auto-flip. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0d10;          /* page plane / chart surface */
+  --panel: #0f131a;       /* panel surface, a touch above the plane */
+  --fg: #c9d1d9;          /* primary ink */
+  --fg-dim: #8b949e;      /* secondary ink */
+  --dim: #5c6670;         /* muted */
+  --rule: #1e242b;        /* panel borders */
+  --grid: #171c23;        /* chart gridlines (recessive) */
+  --axis: #2b333c;        /* chart baseline/axis */
+
+  /* Event-feed kinds — EventKind values plus nemesis.live's attack/defend aliases. */
+  --system: #8b949e;
+  --red: #ff5f56;         /* attacker move */
+  --blue: #4aa8ff;        /* defender move */
+  --reward-up: #3fb950;
+  --reward-down: #e3b341;
+  --train: #a371f7;       /* learning update / checkpoint */
+  --metric: #39c5cf;      /* evaluation metric readout */
+
+  /* Chart series (semantic: attacker=red, defender=blue, good=green, caution=amber). */
+  --s-blue: #4aa8ff;
+  --s-red: #ff5f56;
+  --s-win: #3fb950;
+  --s-attack: #ff5f56;
+  --s-avail: #4aa8ff;
+  --s-fp: #e3b341;
+  --cursor: #c9d1d9;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.55 ui-monospace, "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- header ---- */
+header {
+  display: flex; flex-wrap: wrap; gap: 4px 24px; align-items: baseline;
+  padding: 12px 16px; border-bottom: 1px solid var(--rule);
+}
+header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: 0.08em; }
+header .stat { color: var(--dim); }
+header .stat b { color: var(--fg); font-weight: 400; }
+#status.live b { color: var(--reward-up); }
+#status.down b { color: var(--red); }
+header .controls { margin-left: auto; display: flex; gap: 12px; }
+button { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; color: var(--dim); }
+button:hover, button:focus-visible { color: var(--fg); outline: none; }
+
+/* ---- KPI tiles ---- */
+#kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1px; background: var(--rule); border-bottom: 1px solid var(--rule);
+}
+.kpi { background: var(--bg); padding: 10px 14px; }
+.kpi .k-label { color: var(--dim); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+.kpi .k-value { font-size: 22px; margin-top: 2px; }
+.kpi .k-sub { color: var(--dim); font-size: 11px; }
+.kpi.win .k-value { color: var(--s-win); }
+.kpi.attack .k-value { color: var(--s-attack); }
+.kpi.avail .k-value { color: var(--s-avail); }
+.kpi.fp .k-value { color: var(--s-fp); }
+.kpi.blue .k-value { color: var(--s-blue); }
+.kpi.red .k-value { color: var(--s-red); }
+
+/* ---- main two-column body ---- */
+main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--rule); min-height: 0; }
+.feed-panel, .charts-panel { background: var(--bg); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.panel-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 10px 16px; border-bottom: 1px solid var(--rule);
+}
+.panel-title { font-size: 12px; letter-spacing: 0.1em; color: var(--fg-dim); font-weight: 600; }
+.panel-sub { color: var(--dim); font-size: 11px; }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; color: var(--dim); }
+.legend .chip { display: inline-flex; align-items: center; gap: 5px; }
+.legend .swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+/* ---- event feed ---- */
+#log { flex: 1; overflow-y: auto; padding: 12px 16px 24px; white-space: pre-wrap; word-break: break-word; }
+.line { display: flex; gap: 12px; }
+.ts { color: var(--dim); flex: none; }
+.tag { flex: none; width: 7ch; font-weight: 600; }
+.msg { min-width: 0; }
+.who { color: var(--dim); }
+.system .tag, .system .msg { color: var(--system); }
+.red .tag, .attack .tag { color: var(--red); }
+.blue .tag, .defend .tag { color: var(--blue); }
+.reward .tag, .reward .msg { color: var(--reward-up); }
+.reward.down .tag, .reward.down .msg { color: var(--reward-down); }
+.train .tag, .train .msg { color: var(--train); }
+.metric .tag, .metric .msg { color: var(--metric); }
+.fail { color: var(--dim); text-decoration: line-through; }
+.cursor {
+  display: inline-block; width: 0.6em; height: 1.1em; vertical-align: text-bottom;
+  background: var(--cursor); animation: blink 1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+
+/* ---- charts ---- */
+#charts { flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
+.chart { padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.chart:last-child { border-bottom: 0; }
+.chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.chart-title { font-size: 12px; color: var(--fg); }
+.chart-note { font-size: 11px; color: var(--dim); }
+.chart svg { display: block; width: 100%; height: auto; margin-top: 6px; }
+.chart .legend { margin-top: 4px; }
+.axis-label { fill: var(--dim); font-size: 10px; }
+.grid-line { stroke: var(--grid); stroke-width: 1; }
+.axis-line { stroke: var(--axis); stroke-width: 1; }
+.series-raw { fill: none; stroke-width: 1; opacity: 0.35; }
+.series-roll { fill: none; stroke-width: 2; }
+.dot { opacity: 0.5; }
+.crosshair { stroke: var(--dim); stroke-width: 1; stroke-dasharray: 3 3; }
+.tooltip {
+  position: fixed; pointer-events: none; z-index: 20; display: none;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 4px;
+  padding: 6px 8px; font-size: 11px; color: var(--fg); white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+}
+.tooltip .tt-ep { color: var(--dim); margin-bottom: 3px; }
+.tooltip .tt-row { display: flex; gap: 8px; align-items: center; }
+.tooltip .tt-row .swatch { width: 8px; height: 8px; border-radius: 2px; }
+.tooltip .tt-row .v { margin-left: auto; font-variant-numeric: tabular-nums; }
+.empty { color: var(--dim); padding: 24px 0; font-size: 12px; }
+
+/* ---- narrow: stack feed under charts ---- */
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; }
+  .feed-panel { order: 2; min-height: 50vh; }
+  .charts-panel { order: 1; }
+  body { font-size: 12px; }
+  .line { gap: 8px; }
+  .ts { display: none; }
+}
