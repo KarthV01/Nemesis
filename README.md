@@ -28,6 +28,35 @@ cd Nemesis
 bash setup.sh   # installs uv if missing; CPU-only PyTorch unless TORCH_CUDA=1
 ```
 
+## Local configuration and secrets
+
+Copy `.env.example` to `.env` and replace only the values needed by your setup.
+`.env` and credential files are intentionally ignored by Git; never commit real
+webhook keys, API tokens, private keys, or passwords.
+
+Nemesis reads configuration from environment variables. Load `.env` into the
+current shell before starting a component that needs it:
+
+```powershell
+# Windows PowerShell
+Get-Content .env | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' } | ForEach-Object {
+    $name, $value = $_ -split '=', 2
+    Set-Item -Path "Env:$name" -Value $value
+}
+```
+
+```bash
+# Linux/macOS
+set -a
+source .env
+set +a
+```
+
+The Ollama agent defaults to `qwen2.5:1.5b-instruct`; override it with
+`NEMESIS_LLM_MODEL`. Modal CLI authentication should be configured with Modal's
+own setup command/account secret store. The `MODAL_WEBHOOK_*` variables are only
+for deployments that expose a Modal webhook.
+
 ## Cloud training on Docker Agentic Platform
 
 See [docs/docker-sandbox.md](docs/docker-sandbox.md) to run time-budgeted training in a Docker sandbox
