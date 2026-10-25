@@ -274,7 +274,8 @@ def test_events_endpoint_streams_logged_events(running_server):
             if not data:
                 break
             chunks.append(data)
-            if b"Episode 1 started" in b"".join(chunks):
+            received = b"".join(chunks)
+            if b"Episode 1 started" in received and b"Exploit host_6" in received:
                 break
     except socket.timeout:
         pass
