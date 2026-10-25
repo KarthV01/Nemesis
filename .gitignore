@@ -9,6 +9,16 @@ __pycache__/
 venv/
 env/
 
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.local
+*credentials*.txt
+*secrets*.txt
+*.key
+*.pem
+
 # OS / editor
 .DS_Store
 .idea/
