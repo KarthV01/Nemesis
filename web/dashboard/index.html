@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nemesis Dashboard</title>
+<meta name="description" content="Live commentator and evaluation metrics for Nemesis red-vs-blue self-play.">
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+<header>
+  <h1>NEMESIS / DASHBOARD</h1>
+  <span class="stat" id="status">feed <b>connecting</b></span>
+  <span class="stat">episode <b id="episode">-</b></span>
+  <span class="stat">step <b id="step">-</b></span>
+  <span class="stat">events <b id="count">0</b></span>
+  <span class="controls">
+    <button id="pause" type="button">[pause]</button>
+    <button id="clear" type="button">[clear]</button>
+  </span>
+</header>
+
+<!-- Evaluation KPIs: the metric vector, because win rate alone misleads. -->
+<section id="kpis" aria-label="evaluation summary"></section>
+
+<main>
+  <!-- Left: the live commentator (terminal event feed). -->
+  <section class="feed-panel" aria-label="event feed">
+    <div class="panel-head">
+      <span class="panel-title">EVENT FEED</span>
+      <span class="legend" id="feed-legend"></span>
+    </div>
+    <div id="log" aria-live="polite"><div class="line" id="prompt"><span class="cursor"></span></div></div>
+  </section>
+
+  <!-- Right: evaluation metric time-series. -->
+  <section class="charts-panel" aria-label="evaluation metrics">
+    <div class="panel-head">
+      <span class="panel-title">EVALUATION METRICS</span>
+      <span class="panel-sub" id="metrics-sub">no metrics yet</span>
+    </div>
+    <div id="charts"></div>
+  </section>
+</main>
+
+<script src="charts.js"></script>
+<script src="dashboard.js"></script>
+</body>
+</html>
