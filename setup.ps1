@@ -19,4 +19,9 @@ if ($LASTEXITCODE -ne 0) { throw "installing CC4 requirements failed" }
 uv pip install --python .venv\Scripts\python.exe -e external\cage-challenge-4 --config-settings editable_mode=compat
 if ($LASTEXITCODE -ne 0) { throw "installing CybORG failed" }
 
+# Keep the Modal CLI in the project venv so cloud entrypoints import the same
+# Gymnasium/CybORG/Nemesis dependencies as local runs.
+uv pip install --python .venv\Scripts\python.exe modal==1.6.2
+if ($LASTEXITCODE -ne 0) { throw "installing Modal failed" }
+
 .venv\Scripts\python.exe scripts\smoke_test.py

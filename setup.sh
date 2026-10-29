@@ -29,4 +29,8 @@ uv pip install --python "$PY" -r external/cage-challenge-4/Requirements.txt
 # and `import CybORG` fails outside the repo. Compat mode puts the repo dir on sys.path.
 uv pip install --python "$PY" -e external/cage-challenge-4 --config-settings editable_mode=compat
 
+# Keep the Modal CLI in the project venv so cloud entrypoints import the same
+# Gymnasium/CybORG/Nemesis dependencies as local runs.
+uv pip install --python "$PY" modal==1.6.2
+
 "$PY" scripts/smoke_test.py

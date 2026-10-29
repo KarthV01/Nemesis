@@ -57,6 +57,15 @@ The Ollama agent defaults to `qwen2.5:1.5b-instruct`; override it with
 own setup command/account secret store. The `MODAL_WEBHOOK_*` variables are only
 for deployments that expose a Modal webhook.
 
+On Windows, `scripts/modal_with_env.ps1` safely loads Modal account credentials
+from the ignored `.env` file and maps legacy `token_id` / `token_secret` names
+to the environment variables expected by Modal. For example:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 app list
+powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 run scripts/modal_poc.py
+```
+
 ## Cloud training on Docker Agentic Platform
 
 See [docs/docker-sandbox.md](docs/docker-sandbox.md) to run time-budgeted training in a Docker sandbox
