@@ -1,0 +1,51 @@
+name: nemesis
+
+x-runtime-security: &runtime-security
+  image: nemesis-runtime:local
+  build:
+    context: .
+    dockerfile: Dockerfile
+  init: true
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=1g
+  volumes:
+    - ./runs:/artifacts
+
+services:
+  trainer:
+    <<: *runtime-security
+    profiles: ["train"]
+    network_mode: none
+    command:
+      - scripts/train_selfplay.py
+      - --name
+      - ${NEMESIS_RUN_NAME:-live}
+      - --artifacts
+      - /artifacts/selfplay
+
+  dashboard:
+    <<: *runtime-security
+    command:
+      - scripts/dashboard.py
+      - --events
+      - /artifacts/selfplay/experiments/${NEMESIS_RUN_NAME:-live}/events.jsonl
+      - --metrics
+      - /artifacts/selfplay/experiments/${NEMESIS_RUN_NAME:-live}/evaluations.jsonl
+      - --follow
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    ports:
+      - "127.0.0.1:${NEMESIS_DASHBOARD_PORT:-8001}:8001"
+    networks:
+      - dashboard
+
+networks:
+  dashboard:
+    internal: true
