@@ -1,7 +1,7 @@
 """Nemesis platform layer — the shared contracts the training stages agree on.
 
 The architecture has several moving parts built in parallel (red training, blue
-training, self-play, Modal cloud jobs, sandbox evaluation, LLM agents, a live
+training, self-play, Modal cloud jobs, sandbox evaluation, JAX agents, a live
 dashboard). They stay compatible by depending on this layer instead of on each
 other:
 
