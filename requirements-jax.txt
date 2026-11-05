@@ -1,0 +1,4 @@
+# JAX-native Nemesis agents. Kept separate from CC4's PyTorch requirements so
+# either framework can be installed without replacing the other.
+jax[cpu]==0.4.35
+
