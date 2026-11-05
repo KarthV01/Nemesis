@@ -15,7 +15,11 @@ CAGE-Challenge-4 enterprise network. The goal is a reproducible pipeline:
    with outputs constrained to legal actions, compared against PPO, with LoRA
    RL fine-tuning on cloud GPU.
 
-The laptop is a development terminal and dashboard; heavy compute runs on Modal.
+The default runtime is a local Docker sandbox: CybORG/Gymnasium and the agent
+policies execute together in a networkless training container. The laptop is
+the control plane and exposes only the loopback-bound dashboard. The same image
+can run on remote Docker compute; Modal remains an optional compute backend,
+not the security boundary for normal runs.
 
 ```
                       ┌──────────────────────────────────────────┐
@@ -74,3 +78,18 @@ own doc page under `docs/` and its own tests.
 - Record the `EnvSpec` with every run so results are reproducible.
 - Prefer reward **plus** the metric vector in `nemesis.platform.metrics`; win
   rate alone is misleading while both sides learn.
+
+## Runtime isolation
+
+`compose.yaml` defines two services with deliberately different responsibilities:
+
+- `trainer` runs the simulator and policies with `network_mode: none`, a
+  read-only root filesystem, no Linux capabilities, and `/artifacts` as its only
+  persistent writable mount.
+- `dashboard` reads the same artifact mount and serves the event/metric UI on
+  `127.0.0.1:8001`. Its Docker network is internal and cannot reach the internet.
+
+The containers under `nemesis/sandbox/targets` are a separate evaluation lab.
+They do not host the Gym environment or ordinary training agents. Keeping that
+boundary explicit prevents an abstract CybORG action from silently becoming a
+real network action.

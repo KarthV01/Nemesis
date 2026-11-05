@@ -66,6 +66,50 @@ powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 app list
 powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 run scripts/modal_poc.py
 ```
 
+## Default Docker runtime
+
+Nemesis runs training inside a locked-down Docker container by default. The
+container hosts the CybORG/Gymnasium simulation and the agent policies, has no
+network interface, drops Linux capabilities, and writes only to the mounted
+`runs/` artifact directory. A separate read-only dashboard container follows
+those artifacts and publishes its UI only on host loopback.
+
+On Windows (Docker Desktop with Linux containers):
+
+```powershell
+# Build, start the localhost dashboard, and run self-play training.
+.\scripts\nemesis.ps1 up -RunName live
+
+# Fast end-to-end validation.
+.\scripts\nemesis.ps1 smoke -RunName smoke
+
+# Pass additional self-play options after the named parameters.
+.\scripts\nemesis.ps1 train -RunName experiment-1 -- --generations 10 --blue-steps 8000
+
+# Stop the dashboard container.
+.\scripts\nemesis.ps1 down
+```
+
+On Linux/macOS:
+
+```bash
+NEMESIS_RUN_NAME=live bash scripts/nemesis.sh up
+NEMESIS_RUN_NAME=smoke bash scripts/nemesis.sh smoke
+```
+
+While a run is active, open <http://localhost:8001>. The dashboard follows the
+run's event stream and evaluation metrics from `runs/selfplay/experiments/<run>`.
+Set `NEMESIS_DASHBOARD_PORT` (shell script) or `-Port` (PowerShell) to use a
+different host port.
+
+The Docker runtime is different from `nemesis.sandbox.targets`: normal training
+uses the in-process simulated CC4 network, while the target lab is an optional,
+separately isolated set of intentionally vulnerable containers used only by the
+sandbox evaluation adapter. Neither network is exposed to the training agent.
+
+Direct host execution remains available for development and debugging, but it
+is no longer the documented default.
+
 ## Cloud training on Docker Agentic Platform
 
 See [docs/docker-sandbox.md](docs/docker-sandbox.md) to run time-budgeted training in a Docker sandbox
