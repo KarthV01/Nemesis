@@ -88,10 +88,114 @@
   };
   el("clear").onclick = () => { while (log.firstChild !== prompt) log.removeChild(log.firstChild); };
 
-  const source = new EventSource("/events");
-  source.onopen = () => setStatus("live");
-  source.onerror = () => setStatus(source.readyState === EventSource.CLOSED ? "down" : "reconnecting");
-  source.onmessage = (msg) => update(JSON.parse(msg.data));
+  let source = null;
+  function connectEvents(url) {
+    if (source) source.close();
+    source = new EventSource(url);
+    source.onopen = () => setStatus("live");
+    source.onerror = () => setStatus(source.readyState === EventSource.CLOSED ? "down" : "reconnecting");
+    source.onmessage = (msg) => {
+      const event = JSON.parse(msg.data);
+      update(event);
+      if (event.phase === "completed") source.close();
+    };
+  }
+  connectEvents("/events");
+
+  // ---- arena: launch an isolated match, then consume its saved/live stream -- //
+  function fillSelect(id, values) {
+    const select = el(id);
+    select.innerHTML = "";
+    values.forEach((value) => {
+      const option = document.createElement("option");
+      option.value = value; option.textContent = value; select.appendChild(option);
+    });
+  }
+
+  function setMatchStatus(status, detail) {
+    const node = el("match-status");
+    node.className = status;
+    node.textContent = detail ? `${status}: ${detail}` : status;
+  }
+
+  function clearFeed() {
+    while (log.firstChild !== prompt) log.removeChild(log.firstChild);
+    total = 0; el("count").textContent = "0"; el("episode").textContent = "-"; el("step").textContent = "-";
+  }
+
+  async function loadReplays() {
+    const response = await fetch("/api/matches", { cache: "no-store" });
+    if (!response.ok) return;
+    const box = el("replays"); box.innerHTML = "";
+    (await response.json()).matches.slice(0, 8).forEach((job) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `${job.id} ${job.status}`;
+      button.onclick = () => watchMatch(job.id, true);
+      box.appendChild(button);
+    });
+  }
+
+  async function watchMatch(id, replay) {
+    clearFeed();
+    setMatchStatus(replay ? "replay" : "queued", id);
+    connectEvents(`/api/matches/${id}/events`);
+    const runButton = el("run-match"); runButton.disabled = true;
+    for (;;) {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+      const response = await fetch(`/api/matches/${id}`, { cache: "no-store" });
+      if (!response.ok) break;
+      const job = await response.json();
+      setMatchStatus(job.status, job.error || id);
+      if (job.result) {
+        el("match-result").textContent = `${job.result.winner} · blue ${job.result.blue_reward} · red ${job.result.red_reward}`;
+      }
+      if (job.status === "completed" || job.status === "failed") {
+        if (source) source.close();
+        runButton.disabled = false; loadReplays(); break;
+      }
+    }
+  }
+
+  async function initArena() {
+    const response = await fetch("/api/arena", { cache: "no-store" });
+    if (!response.ok) return;
+    const catalog = await response.json();
+    el("arena").hidden = false;
+    fillSelect("red-team", catalog.teams); fillSelect("blue-team", catalog.teams);
+    fillSelect("scenario", catalog.scenarios); fillSelect("match-format", catalog.formats);
+    fillSelect("red-role", catalog.roles.red); fillSelect("blue-role", catalog.roles.blue);
+    for (const side of ["red", "blue"]) {
+      const select = el(`${side}-checkpoint`);
+      (catalog.checkpoints[side] || []).forEach((checkpoint) => {
+        const option = document.createElement("option"); option.value = checkpoint; option.textContent = checkpoint; select.appendChild(option);
+      });
+    }
+    const toggleRoles = () => {
+      const roleMatch = el("match-format").value === "1v1";
+      el("red-role-wrap").hidden = !roleMatch; el("blue-role-wrap").hidden = !roleMatch;
+    };
+    el("match-format").onchange = toggleRoles; toggleRoles();
+    el("match-form").onsubmit = async (event) => {
+      event.preventDefault();
+      const roleMatch = el("match-format").value === "1v1";
+      const payload = {
+        red_team: el("red-team").value, blue_team: el("blue-team").value,
+        red_checkpoint: el("red-checkpoint").value || null, blue_checkpoint: el("blue-checkpoint").value || null,
+        scenario: el("scenario").value, format: el("match-format").value,
+        red_role: roleMatch ? el("red-role").value : null, blue_role: roleMatch ? el("blue-role").value : null,
+        steps: Number(el("steps").value), seed: el("seed").value ? Number(el("seed").value) : null,
+        delay: Number(el("delay").value),
+      };
+      el("run-match").disabled = true; el("match-result").textContent = "";
+      const created = await fetch("/api/matches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const job = await created.json();
+      if (!created.ok) { setMatchStatus("failed", job.error); el("run-match").disabled = false; return; }
+      watchMatch(job.id, false);
+    };
+    loadReplays();
+  }
+  initArena().catch(() => {});
 
   // ---- metrics: KPIs + charts --------------------------------------------- //
   const pct = (v) => (v == null ? "—" : Math.round(v * 100) + "%");

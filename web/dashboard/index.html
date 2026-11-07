@@ -20,6 +20,29 @@
   </span>
 </header>
 
+<section id="arena" hidden aria-label="arena match controls">
+  <form id="match-form">
+    <label>red team<select id="red-team" name="red_team"></select></label>
+    <label>red checkpoint<select id="red-checkpoint" name="red_checkpoint"><option value="">built-in policy</option></select></label>
+    <label>blue team<select id="blue-team" name="blue_team"></select></label>
+    <label>blue checkpoint<select id="blue-checkpoint" name="blue_checkpoint"><option value="">built-in policy</option></select></label>
+    <label>scenario<select id="scenario" name="scenario"></select></label>
+    <label>format<select id="match-format" name="format"></select></label>
+    <label id="red-role-wrap" hidden>red role<select id="red-role" name="red_role"></select></label>
+    <label id="blue-role-wrap" hidden>blue role<select id="blue-role" name="blue_role"></select></label>
+    <label>steps<input id="steps" name="steps" type="number" min="1" max="500" value="100"></label>
+    <label>seed<input id="seed" name="seed" type="number" placeholder="random"></label>
+    <label>stream delay<input id="delay" name="delay" type="number" min="0" max="5" step="0.05" value="0.15"></label>
+    <button class="primary" id="run-match" type="submit">RUN MATCH</button>
+  </form>
+  <div class="arena-foot">
+    <span id="match-status">ready</span>
+    <span id="match-result"></span>
+    <span class="saved-label">saved replays</span>
+    <span id="replays"></span>
+  </div>
+</section>
+
 <!-- Evaluation KPIs: the metric vector, because win rate alone misleads. -->
 <section id="kpis" aria-label="evaluation summary"></section>
 
