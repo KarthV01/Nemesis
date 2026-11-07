@@ -23,6 +23,10 @@ case "$command_name" in
       scripts/train_selfplay.py --name "$NEMESIS_RUN_NAME" \
       --artifacts /artifacts/selfplay "$@"
     ;;
+  train-team)
+    docker compose --profile train run --build --rm trainer \
+      scripts/train_ppo_team.py --checkpoint-dir /artifacts/ppo_team "$@"
+    ;;
   smoke)
     docker compose up --build -d dashboard
     echo "Dashboard: http://localhost:${NEMESIS_DASHBOARD_PORT}"
@@ -37,7 +41,7 @@ case "$command_name" in
     docker compose down --remove-orphans
     ;;
   *)
-    echo "usage: scripts/nemesis.sh {up|train|smoke|dashboard|down|logs|build} [training args...]" >&2
+    echo "usage: scripts/nemesis.sh {up|train|train-team|smoke|dashboard|down|logs|build} [training args...]" >&2
     exit 2
     ;;
 esac

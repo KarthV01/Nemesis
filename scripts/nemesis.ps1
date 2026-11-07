@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("up", "train", "smoke", "dashboard", "down", "logs", "build")]
+    [ValidateSet("up", "train", "train-team", "smoke", "dashboard", "down", "logs", "build")]
     [string]$Command = "up",
     [string]$RunName = "live",
     [int]$Port = 8001,
@@ -42,6 +42,14 @@ switch ($Command) {
             "--profile", "train", "run", "--build", "--rm", "trainer",
             "scripts/train_selfplay.py", "--name", $RunName,
             "--artifacts", "/artifacts/selfplay"
+        )
+        if ($TrainingArgs) { $args += $TrainingArgs }
+        Invoke-Compose $args
+    }
+    "train-team" {
+        $args = @(
+            "--profile", "train", "run", "--build", "--rm", "trainer",
+            "scripts/train_ppo_team.py", "--checkpoint-dir", "/artifacts/ppo_team"
         )
         if ($TrainingArgs) { $args += $TrainingArgs }
         Invoke-Compose $args
