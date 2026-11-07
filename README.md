@@ -3,7 +3,7 @@
 > [*Νέμεσις*](https://www.theoi.com/Daimon/Nemesis.html) — the Greek goddess of divine retribution and rightful measure. In Hesiod's telling, she was a daughter of **Nyx**, the primordial goddess of night. She punished **hubris**: the arrogance of those who believed their power or good fortune placed them beyond consequence. Artists gave her a measuring rod to mark the limits, a bridle to restrain excess, and scales to weigh what was due. Her domain was the restoration of balance whenever pride, cruelty, or undeserved fortune disturbed it. She was the reckoning that arrived when confidence outran judgment.
 > Nemesis gives a security policy an adversary that can expose the distance between appearing capable and surviving an attack.
 
-A multi-agent reinforcement learning framework for cybersecurity, built around repeated attack-and-defense episodes in a simulated enterprise network. The current training path uses RLlib and PPO to train five blue-team defenders against CybORG's scripted red attacker, saving policy checkpoints between runs. Offensive and defensive self-play is the broader direction.
+A multi-agent reinforcement learning framework for cybersecurity, built around repeated attack-and-defense episodes in a simulated enterprise network. All trainable policies use PyTorch through Stable-Baselines3 or RLlib. The current training path trains five blue-team defenders against CybORG's scripted red attacker, saving policy checkpoints between runs. Offensive and defensive self-play is the broader direction.
 
 Built on [CybORG](https://github.com/cage-challenge/cage-challenge-4) (CAGE Challenge 4), vendored as a git submodule in `external/cage-challenge-4`.
 
@@ -86,6 +86,9 @@ On Windows (Docker Desktop with Linux containers):
 # Pass additional self-play options after the named parameters.
 .\scripts\nemesis.ps1 train -RunName experiment-1 -- --generations 10 --blue-steps 8000
 
+# Start all five PyTorch PPO agents on container compute. Checkpoints persist under runs/ppo_team.
+.\scripts\nemesis.ps1 train-team -- --timesteps 100000 --save-every 20000
+
 # Stop the dashboard container.
 .\scripts\nemesis.ps1 down
 ```
@@ -95,6 +98,7 @@ On Linux/macOS:
 ```bash
 NEMESIS_RUN_NAME=live bash scripts/nemesis.sh up
 NEMESIS_RUN_NAME=smoke bash scripts/nemesis.sh smoke
+bash scripts/nemesis.sh train-team --timesteps 100000 --save-every 20000
 ```
 
 While a run is active, open <http://localhost:8001>. The dashboard follows the
@@ -131,6 +135,26 @@ contract, isolation controls, artifacts, and replay behavior.
 See [docs/docker-sandbox.md](docs/docker-sandbox.md) to run time-budgeted training in a Docker sandbox
 (`scripts/sandbox_train.sh`, which pushes results to a `runs/<id>` branch) and Claude Code on Sonnet 5.5
 with your Claude subscription (`scripts/sandbox_claude.sh`).
+
+## PyTorch compute entrypoints
+
+The project has one policy runtime: PyTorch. Choose the compute target without
+changing agent code:
+
+```powershell
+# Local/Docker compute: five blue PPO agents, resumable checkpoints.
+.\scripts\nemesis.ps1 train-team -- --timesteps 100000
+
+# Modal compute: the same PPOLearner policies, with checkpoints on the persistent Volume.
+powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 run modal_app/train.py::train_blue --timesteps 200000
+```
+
+The Docker command builds the pinned CPU PyTorch image automatically and mounts
+`runs/` at `/artifacts`. The Modal command builds its matching PyTorch image,
+requests eight CPUs, attaches the `nemesis-artifacts` Volume, and releases the
+worker when training finishes. Docker resumes automatically; pass the same
+Modal `--run-id` to continue a cloud run from its latest checkpoint.
+See [docs/modal.md](docs/modal.md) for Volume inspection and download commands.
 
 ## Usage
 
