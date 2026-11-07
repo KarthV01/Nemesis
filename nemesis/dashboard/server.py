@@ -27,6 +27,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from nemesis.arena.controller import ArenaUnavailable, MatchManager
+from nemesis.arena.models import MatchRequest
 from nemesis.platform.events import Event
 from nemesis.platform.metrics import EpisodeMetrics, MetricsLog, summarize
 
@@ -262,7 +264,12 @@ class FileFeed:
 # --------------------------------------------------------------------------- #
 # HTTP handler
 # --------------------------------------------------------------------------- #
-def make_handler(feed: FileFeed, metrics_path: Optional[str], window: int):
+def make_handler(
+    feed: FileFeed,
+    metrics_path: Optional[str],
+    window: int,
+    arena: Optional[MatchManager] = None,
+):
     class Handler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(WEB_ROOT), **kwargs)
@@ -280,9 +287,21 @@ def make_handler(feed: FileFeed, metrics_path: Optional[str], window: int):
             self.end_headers()
             self.wfile.write(body)
 
+        def _read_json(self) -> Dict:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 1 or length > 64 * 1024:
+                raise ValueError("request body must contain JSON and be smaller than 64 KiB")
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+
         # -- routes ----------------------------------------------------------- #
         def do_GET(self):
             path = self.path.split("?")[0]
+            if arena is not None and path == "/api/arena":
+                return self._send_json(arena.catalog())
+            if arena is not None and path == "/api/matches":
+                return self._send_json({"matches": arena.list()})
+            if arena is not None and path.startswith("/api/matches/"):
+                return self._arena_match_get(path)
             if path == "/events":
                 return self._stream_events()
             if path == "/metrics":
@@ -291,6 +310,41 @@ def make_handler(feed: FileFeed, metrics_path: Optional[str], window: int):
                 return self._send_json({"ok": True, "metrics_count": len(read_metrics(metrics_path))})
             return super().do_GET()  # static files out of web/dashboard
 
+        def do_POST(self):
+            path = self.path.split("?")[0]
+            if arena is None or path != "/api/matches":
+                return self._send_json({"error": "not found"}, status=404)
+            try:
+                job = arena.submit(MatchRequest.from_dict(self._read_json()))
+                return self._send_json(job, status=202)
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                return self._send_json({"error": str(exc)}, status=400)
+            except ArenaUnavailable as exc:
+                return self._send_json({"error": str(exc)}, status=503)
+
+        def _arena_match_get(self, path: str):
+            parts = path.strip("/").split("/")
+            if len(parts) not in (3, 4):
+                return self._send_json({"error": "not found"}, status=404)
+            match_id = parts[2]
+            try:
+                if len(parts) == 4 and parts[3] == "events":
+                    job = arena.get(match_id)
+                    match_feed = FileFeed(
+                        str(arena.events_path(match_id)),
+                        follow=job["status"] in ("queued", "running"),
+                        poll=0.1,
+                    ).start()
+                    try:
+                        return self._stream_events(match_feed)
+                    finally:
+                        match_feed.stop()
+                if len(parts) == 3:
+                    return self._send_json(arena.get(match_id))
+            except KeyError:
+                return self._send_json({"error": "unknown match"}, status=404)
+            return self._send_json({"error": "not found"}, status=404)
+
         def _serve_metrics(self):
             try:
                 payload = metrics_timeseries(read_metrics(metrics_path), window=window)
@@ -298,7 +352,8 @@ def make_handler(feed: FileFeed, metrics_path: Optional[str], window: int):
                 return self._send_json({"error": str(exc)}, status=500)
             return self._send_json(payload)
 
-        def _stream_events(self):
+        def _stream_events(self, event_feed: Optional[FileFeed] = None):
+            event_feed = event_feed or feed
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
@@ -307,7 +362,7 @@ def make_handler(feed: FileFeed, metrics_path: Optional[str], window: int):
             last_id = int(self.headers.get("Last-Event-ID", -1))
             try:
                 while True:
-                    events = feed.since(last_id)
+                    events = event_feed.since(last_id)
                     if not events:
                         self.wfile.write(b": keepalive\n\n")
                     for event in events:
@@ -334,6 +389,7 @@ def build_server(
     poll: float = 0.25,
     delay: float = 0.0,
     window: int = DEFAULT_WINDOW,
+    arena: Optional[MatchManager] = None,
 ) -> Tuple[ThreadingHTTPServer, FileFeed]:
     """Build (but do not block on) the server and its started feed.
 
@@ -341,7 +397,7 @@ def build_server(
     ``server.serve_forever()`` and calls ``feed.stop()`` / ``server.shutdown()``.
     """
     feed = FileFeed(events_path, follow=follow, poll=poll, delay=delay).start()
-    server = ThreadingHTTPServer((host, port), make_handler(feed, metrics_path, window))
+    server = ThreadingHTTPServer((host, port), make_handler(feed, metrics_path, window, arena))
     server.daemon_threads = True
     return server, feed
 
@@ -355,10 +411,11 @@ def serve(
     poll: float = 0.25,
     delay: float = 0.0,
     window: int = DEFAULT_WINDOW,
+    arena: Optional[MatchManager] = None,
 ) -> None:
     """Build, announce the URL, and serve until Ctrl+C."""
     server, feed = build_server(
-        events_path, metrics_path, host, port, follow, poll, delay, window
+        events_path, metrics_path, host, port, follow, poll, delay, window, arena
     )
     actual_port = server.server_address[1]
     mode = "following live" if follow else "replaying"

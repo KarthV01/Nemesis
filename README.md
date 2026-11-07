@@ -110,6 +110,22 @@ sandbox evaluation adapter. Neither network is exposed to the training agent.
 Direct host execution remains available for development and debugging, but it
 is no longer the documented default.
 
+## Arena: select, run, watch, replay
+
+The arena dashboard launches each selected CybORG match in its own locked-down
+Docker container and streams actions, rewards, state changes, and the result to
+the browser. Completed streams remain available as saved replays.
+
+```powershell
+docker build -t nemesis-runtime:local .
+$env:PYTHONPATH="external\cage-challenge-4"
+.venv\Scripts\python.exe scripts\dashboard.py --arena --port 8001
+```
+
+Open <http://localhost:8001>, configure a 5v5 team match or role-specific 1v1,
+and select **RUN MATCH**. See [docs/arena.md](docs/arena.md) for the API/runtime
+contract, isolation controls, artifacts, and replay behavior.
+
 ## Cloud training on Docker Agentic Platform
 
 See [docs/docker-sandbox.md](docs/docker-sandbox.md) to run time-budgeted training in a Docker sandbox

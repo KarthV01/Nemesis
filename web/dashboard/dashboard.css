@@ -53,6 +53,26 @@ header .controls { margin-left: auto; display: flex; gap: 12px; }
 button { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; color: var(--dim); }
 button:hover, button:focus-visible { color: var(--fg); outline: none; }
 
+/* ---- arena launcher ---- */
+#arena { border-bottom: 1px solid var(--rule); background: var(--panel); }
+#match-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; padding: 12px 16px; }
+#match-form label { display: grid; gap: 3px; color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+#match-form select, #match-form input {
+  min-width: 112px; height: 30px; border: 1px solid var(--rule); border-radius: 3px;
+  background: var(--bg); color: var(--fg); padding: 3px 7px; font: 12px ui-monospace, monospace;
+}
+#match-form input { width: 92px; min-width: 0; }
+button.primary { height: 30px; padding: 0 14px; border: 1px solid var(--s-win); border-radius: 3px; color: var(--s-win); }
+button.primary:disabled { border-color: var(--dim); color: var(--dim); cursor: wait; }
+.arena-foot { display: flex; gap: 14px; align-items: center; min-height: 30px; padding: 5px 16px; border-top: 1px solid var(--rule); color: var(--dim); font-size: 11px; }
+#match-status.running { color: var(--metric); }
+#match-status.completed { color: var(--reward-up); }
+#match-status.failed { color: var(--red); }
+#match-result { color: var(--fg); }
+.saved-label { margin-left: auto; text-transform: uppercase; }
+#replays { display: flex; gap: 8px; flex-wrap: wrap; }
+#replays button { color: var(--s-blue); }
+
 /* ---- KPI tiles ---- */
 #kpis {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
