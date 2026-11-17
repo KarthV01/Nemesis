@@ -27,6 +27,12 @@ VOLUME_MOUNT_PATH = "/vol"
 #: Store root on the Volume (what ``ArtifactStore`` writes under).
 ARTIFACTS_PATH = f"{VOLUME_MOUNT_PATH}/artifacts"
 
+# CybORG simulation and the current small PPO MLPs are CPU-bound. Modal CPU
+# values are physical cores. Memory is MiB. Keep these explicit so a deployed
+# training job never falls back to Modal's tiny default resource request.
+TRAIN_CPU = 4.0
+TRAIN_MEMORY_MB = 8192
+
 PYTHON_VERSION = "3.10"
 TORCH_VERSION = "2.2.0"
 TORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu"
@@ -103,6 +109,8 @@ __all__ = [
     "VOLUME_NAME",
     "VOLUME_MOUNT_PATH",
     "ARTIFACTS_PATH",
+    "TRAIN_CPU",
+    "TRAIN_MEMORY_MB",
     "PYTHON_VERSION",
     "TORCH_VERSION",
     "PIP_PACKAGES",

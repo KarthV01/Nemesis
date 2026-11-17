@@ -33,6 +33,8 @@ from modal_app.images import (
     APP_NAME,  # noqa: F401  (re-exported for callers)
     ARTIFACTS_PATH,
     MODAL_AVAILABLE,
+    TRAIN_CPU,
+    TRAIN_MEMORY_MB,
     VOLUME_MOUNT_PATH,
     app,
     image,
@@ -308,6 +310,103 @@ def run_training(
     }
 
 
+def run_single_agent_training(
+    *,
+    store: ArtifactStore,
+    run_id: str,
+    timesteps: int,
+    env_factory: Callable[[], Any],
+    agent: str,
+    side=Side.RED,
+    n_steps: int = 2048,
+    batch_size: int = 256,
+    seed: Optional[int] = None,
+    verbose: int = 0,
+    save_every: Optional[int] = None,
+    keep_last: Optional[int] = 3,
+    fresh: bool = False,
+    time_budget_min: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Train one PPO policy against a standard Gymnasium environment.
+
+    Red CC4 training is single-agent because CybORG has no red equivalent of
+    ``BlueFlatWrapper``. This path uses ``SingleRedEnv``'s stable observation
+    and action encoding while persisting the same ArtifactStore checkpoint
+    layout as team training: ``<side>/<run>/checkpoint_N/<agent>/``.
+    """
+    side = Side(side) if not isinstance(side, Side) else side
+    run_dir = store.run_dir(side, run_id)
+    if fresh:
+        store.backend.remove_tree(run_dir)
+
+    env = env_factory()
+    observation, _ = env.reset(seed=seed)
+    latest = None if fresh else store.latest_checkpoint(side, run_id)
+    resume_dir = latest.local_dir() if latest is not None else None
+    learner_dir = os.path.join(resume_dir, agent) if resume_dir else None
+    if learner_dir and os.path.isdir(learner_dir):
+        learner = PPOLearner.load(
+            learner_dir, total_timesteps=timesteps, verbose=verbose
+        )
+    else:
+        learner = PPOLearner(
+            env.observation_space,
+            env.action_space,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            total_timesteps=timesteps,
+            seed=seed,
+            verbose=verbose,
+        )
+
+    start = learner.num_timesteps
+    deadline = time.time() + time_budget_min * 60 if time_budget_min else None
+    step = updates = episodes = 0
+    last_checkpoint = latest
+    extra = {
+        "trained_with": "modal_app.train.run_single_agent_training",
+        "side": str(side),
+        "run_id": run_id,
+        "agent": agent,
+    }
+    try:
+        while start + step < timesteps and (deadline is None or time.time() < deadline):
+            action = learner.act(observation)
+            next_observation, reward, terminated, truncated, _ = env.step(action)
+            updates += int(learner.record(reward, next_observation, terminated, truncated))
+            observation = next_observation
+            step += 1
+            if terminated or truncated:
+                episodes += 1
+                observation, _ = env.reset()
+            if save_every and step % save_every == 0:
+                last_checkpoint = save_team_checkpoint(
+                    store, side, run_id, {agent: learner}, extra=extra,
+                    keep_last=keep_last,
+                )
+    finally:
+        close = getattr(env, "close", None)
+        if close is not None:
+            close()
+
+    if last_checkpoint is None or learner.num_timesteps != start:
+        last_checkpoint = save_team_checkpoint(
+            store, side, run_id, {agent: learner}, extra=extra,
+            keep_last=keep_last,
+        )
+    return {
+        "side": str(side),
+        "run_id": run_id,
+        "run_dir": run_dir,
+        "agents": [agent],
+        "timesteps": learner.num_timesteps,
+        "updates": updates,
+        "episodes": episodes,
+        "checkpoint": last_checkpoint.rel_path,
+        "checkpoint_name": last_checkpoint.name,
+    }
+
+
 def run_evaluation(env, learners: Dict[str, PPOLearner], *, episodes: int = 1,
                    deterministic: bool = True) -> List[EpisodeMetrics]:
     """Run ``episodes`` deterministic episodes and return per-episode metrics.
@@ -350,7 +449,7 @@ def default_run_id(prefix: str) -> str:
 # Modal functions — defined only when modal is installed.
 # --------------------------------------------------------------------------- #
 def _train_on_volume(side, run_id, timesteps, *, steps, n_steps, batch_size,
-                     save_every, seed, red_learns=False):
+                     save_every, seed):
     """Body shared by train_blue/train_red: build a VolumeBackend + CybORG env."""
     from nemesis.platform.envs import blue_training_spec
 
@@ -368,11 +467,43 @@ def _train_on_volume(side, run_id, timesteps, *, steps, n_steps, batch_size,
     return result
 
 
+def _train_red_on_volume(run_id, timesteps, *, steps, n_steps, batch_size,
+                         save_every, seed):
+    """Train the real red Gymnasium policy and persist it to the Volume."""
+    from CybORG.Agents import FiniteStateRedAgent
+    from nemesis.red_env import SingleRedEnv
+
+    backend = VolumeBackend(ARTIFACTS_PATH, volume=volume)
+    store = ArtifactStore(backend)
+    run_id = run_id or default_run_id("red")
+    result = run_single_agent_training(
+        store=store,
+        side=Side.RED,
+        run_id=run_id,
+        timesteps=timesteps,
+        agent="red_agent_0",
+        env_factory=lambda: SingleRedEnv(
+            agent="red_agent_0",
+            steps=steps,
+            red_agent_class=FiniteStateRedAgent,
+        ),
+        n_steps=n_steps,
+        batch_size=batch_size,
+        save_every=save_every,
+        seed=seed,
+        verbose=1,
+    )
+    backend.commit()
+    print("red training complete:", json.dumps(result, indent=2))
+    return result
+
+
 if MODAL_AVAILABLE:  # pragma: no cover - needs modal installed + authed
     _FN_KW = dict(
         image=image,
         volumes={VOLUME_MOUNT_PATH: volume},
-        cpu=8.0,                 # CybORG/PPO is CPU-bound; no GPU (see docs/modal.md)
+        cpu=TRAIN_CPU,
+        memory=TRAIN_MEMORY_MB,
         timeout=6 * 60 * 60,     # raise for longer runs (Modal max is 24 h)
     )
 
@@ -390,21 +521,16 @@ if MODAL_AVAILABLE:  # pragma: no cover - needs modal installed + authed
     def train_red(timesteps: int = 200_000, run_id: Optional[str] = None, steps: int = 500,
                   n_steps: int = 2048, batch_size: int = 256, save_every: int = 20_000,
                   seed: Optional[int] = None):
-        """Train a red policy on Modal, persisting to the Volume.
-
-        NOTE: the learning-red environment (``nemesis/red_env.py``) is owned by
-        ``stage/red-training``. Until it lands this uses the shared blue_flat
-        build as a structural placeholder; the integrator should point this at
-        the red env factory. The storage/Volume path is identical.
-        """
-        return _train_on_volume(
-            Side.RED, run_id, timesteps, steps=steps, n_steps=n_steps,
+        """Train the red CC4 attacker policy on Modal and persist it."""
+        return _train_red_on_volume(
+            run_id, timesteps, steps=steps, n_steps=n_steps,
             batch_size=batch_size, save_every=save_every, seed=seed,
         )
 
 
 __all__ = [
     "run_training",
+    "run_single_agent_training",
     "run_evaluation",
     "save_team_checkpoint",
     "load_team",

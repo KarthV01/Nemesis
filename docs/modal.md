@@ -78,8 +78,8 @@ store's, not Modal's, so a checkpoint trained on Modal loads with plain
 
 ### CPU vs GPU, and cost
 
-- **PPO/CybORG training → CPU.** `train_blue` / `train_red` request CPU cores
-  (default `cpu=8.0`), **no GPU**. CybORG stepping is the bottleneck; a GPU sits
+- **PPO/CybORG training → CPU.** `train_blue` / `train_red` request four
+  physical CPU cores and 8 GiB memory, **no GPU**. CybORG stepping is the bottleneck; a GPU sits
   idle and only adds cost.
 - **GPU (L4) is for the LLM-agents stage**, not this one: LoRA RL fine-tuning of
   a small open-weight model (see `docs/architecture.md`). That stage reuses this
@@ -142,6 +142,8 @@ pip install modal
 modal token new                       # one-time browser auth
 modal run scripts/modal_poc.py        # runs the POC's Modal path
 modal run modal_app/train.py::train_blue --timesteps 200000 --run-id blue-$(date +%s)
+modal run scripts/modal_train.py --side blue --timesteps 200000
+modal run scripts/modal_train.py --side red --timesteps 200000
 ```
 
 ## NOTE FOR INTEGRATOR

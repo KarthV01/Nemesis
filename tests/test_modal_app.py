@@ -29,6 +29,7 @@ from modal_app.train import (
     load_team,
     make_dummy_team_env,
     run_evaluation,
+    run_single_agent_training,
     run_training,
 )
 
@@ -231,3 +232,45 @@ def test_run_training_needs_env_source(tmp_path):
 
 def test_default_run_id_unique():
     assert default_run_id("blue").startswith("blue-")
+
+
+class TinySingleEnv:
+    def __init__(self):
+        import gymnasium as gym
+
+        self.observation_space = gym.spaces.Box(-1.0, 1.0, shape=(4,))
+        self.action_space = gym.spaces.Discrete(2)
+        self.steps = 0
+
+    def reset(self, *, seed=None, options=None):
+        import numpy as np
+
+        self.steps = 0
+        return np.zeros(4, dtype=np.float32), {}
+
+    def step(self, action):
+        import numpy as np
+
+        self.steps += 1
+        return (
+            np.zeros(4, dtype=np.float32),
+            float(action == 0),
+            False,
+            self.steps >= 8,
+            {},
+        )
+
+
+def test_single_agent_training_checkpoints_and_resumes(tmp_path):
+    store = ArtifactStore(VolumeBackend(tmp_path))
+    first = run_single_agent_training(
+        store=store, run_id="red", timesteps=64, env_factory=TinySingleEnv,
+        agent="red_agent_0", n_steps=32, batch_size=16, seed=0,
+    )
+    second = run_single_agent_training(
+        store=store, run_id="red", timesteps=96, env_factory=TinySingleEnv,
+        agent="red_agent_0", n_steps=32, batch_size=16, seed=0,
+    )
+    assert first["side"] == "red"
+    assert second["timesteps"] > first["timesteps"]
+    assert store.latest_checkpoint(Side.RED, "red") is not None
