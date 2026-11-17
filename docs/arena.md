@@ -17,9 +17,10 @@ $env:PYTHONPATH="external/cage-challenge-4"
 
 Open <http://localhost:8001>, choose the two teams, scenario, match format,
 roles (for a role-specific matchup), length, seed, and stream delay, then select
-**RUN MATCH**. A 5v5 uses the selected team captains/generalists. A 1v1 is a
-role-policy matchup: CybORG still instantiates the enterprise scenario's team
-slots, but every slot on a side runs the selected specialist policy.
+**RUN MATCH**. A 5v5 uses the selected team captains/generalists. A 1v1 keeps
+CybORG's structural enterprise team slots but activates only `red_agent_0` and
+`blue_agent_0`; every other red/blue slot sleeps. The selected specialists are
+therefore the only policies taking actions.
 
 Each match is stored under `runs/arena/<match-id>/`:
 

@@ -8,8 +8,37 @@ from pathlib import Path
 from typing import Dict
 
 from nemesis.arena.models import MatchRequest
-from nemesis.platform.envs import EnvSpec, build
 from nemesis.platform.events import EventKind, EventLog
+
+
+def _resolve_agent(name: str):
+    import nemesis.agents as agents
+
+    try:
+        return getattr(agents, name)
+    except AttributeError as exc:
+        raise ValueError(f"unknown arena agent class {name!r}") from exc
+
+
+def _build_scripted_env(request: MatchRequest):
+    from CybORG import CybORG
+    from CybORG.Agents import EnterpriseGreenAgent
+    from CybORG.Simulator.Scenarios import EnterpriseScenarioGenerator
+    from nemesis.arena.agents import single_active_agent_class
+
+    red_name, blue_name = request.agent_classes()
+    red_class = _resolve_agent(red_name)
+    blue_class = _resolve_agent(blue_name)
+    if request.format == "1v1":
+        red_class = single_active_agent_class(red_class, "red_agent_0")
+        blue_class = single_active_agent_class(blue_class, "blue_agent_0")
+    scenario = EnterpriseScenarioGenerator(
+        red_agent_class=red_class,
+        blue_agent_class=blue_class,
+        green_agent_class=EnterpriseGreenAgent,
+        steps=request.steps,
+    )
+    return CybORG(scenario_generator=scenario, seed=request.seed)
 
 
 def _describe(action) -> str:
@@ -41,15 +70,6 @@ def run_match(request: MatchRequest, output_dir: Path) -> Dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     events_path = output_dir / "events.jsonl"
     result_path = output_dir / "result.json"
-    red_class, blue_class = request.agent_classes()
-    spec = EnvSpec(
-        scenario=request.scenario,
-        steps=request.steps,
-        red_agent=red_class,
-        blue_agent=blue_class,
-        wrapper="none",
-        seed=request.seed,
-    )
 
     with events_path.open("w", encoding="utf-8") as stream:
         log = EventLog(stream)
@@ -60,7 +80,7 @@ def run_match(request: MatchRequest, output_dir: Path) -> Dict[str, object]:
             phase="started",
             config=request.as_dict(),
         )
-        env = build(spec)
+        env = _build_scripted_env(request)
         blue_total = 0.0
         red_total = 0.0
         previous_state = None

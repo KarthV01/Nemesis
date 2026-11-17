@@ -11,6 +11,7 @@ import time
 import pytest
 
 from nemesis.arena.controller import MatchManager
+from nemesis.arena.agents import single_active_agent_class
 from nemesis.arena.models import MatchRequest
 from nemesis.dashboard.server import build_server
 
@@ -31,6 +32,19 @@ def test_match_request_resolves_team_and_role_formats():
 
     duel = MatchRequest(format="1v1", red_role="recon", blue_role="detect", steps=5)
     assert duel.agent_classes() == ("RedScout", "BlueSentinel")
+
+
+def test_single_active_agent_only_delegates_selected_slot():
+    class Delegate:
+        def __init__(self, name=None, **kwargs):
+            self.name = name
+
+        def get_action(self, observation, action_space):
+            return "active"
+
+    routed = single_active_agent_class(Delegate, "red_agent_0")
+    assert routed(name="red_agent_0").get_action({}, {}) == "active"
+    assert type(routed(name="red_agent_1").get_action({}, {})).__name__ == "Sleep"
 
 
 @pytest.mark.parametrize(
