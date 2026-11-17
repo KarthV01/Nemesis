@@ -15,11 +15,11 @@ CAGE-Challenge-4 enterprise network. The goal is a reproducible pipeline:
    with outputs constrained to legal actions, compared against PPO, with LoRA
    RL fine-tuning on cloud GPU.
 
-The default runtime is a local Docker sandbox: CybORG/Gymnasium and the agent
-policies execute together in a networkless training container. The laptop is
-the control plane and exposes only the loopback-bound dashboard. The same image
-can run on remote Docker compute; Modal remains an optional compute backend,
-not the security boundary for normal runs.
+Local development defaults to a Docker sandbox: CybORG/Gymnasium and the agent
+policies execute together in a networkless training container. Production uses
+Modal's isolated, network-blocked function containers for PPO training and
+arena matches, with a persistent Volume for checkpoints and events. Vercel is
+only the static control plane and viewer; it never executes an agent.
 
 ```
                       ┌──────────────────────────────────────────┐
@@ -48,13 +48,11 @@ See [`nemesis/platform/README.md`](../nemesis/platform/README.md). The four
 contracts: `envs` (build environments), `storage` (checkpoint/experiment
 layout), `metrics` (evaluation outcomes), `events` (dashboard stream).
 
-## Parallel build: branch ownership
+## Historical branch ownership
 
-Each workstream owns its own files and branch, and pushes meaningful commits as
-it goes. An integrator keeps everything merging cleanly into `main`. To avoid
-conflicts, **only the integrator edits shared files** (`README.md`,
-`nemesis/agents/__init__.py`, `setup.*`); each stage adds its own modules and its
-own doc page under `docs/` and its own tests.
+The stages were originally developed on the following branches. They are now
+integrated on `main`; the table remains a map of module ownership and
+dependencies rather than an active branching requirement.
 
 | Branch | Owns (new paths) | Depends on |
 | --- | --- | --- |
@@ -73,8 +71,9 @@ own doc page under `docs/` and its own tests.
   action objects. The sandbox stage runs real containers only on an isolated
   internal network with no internet, against intentionally-vulnerable lab
   targets, and maps agent decisions to an explicit allow-list of test actions.
-- Modal code is written and locally testable but **not launched** until the user
-  provides credentials. Keep a `--dry-run`/local path for every Modal entrypoint.
+- Modal compute uses CPU-only PyTorch, explicit CPU/RAM requests, a persistent
+  Volume, and network-blocked runtime containers. Deployment steps live in
+  `docs/deployment.md`.
 - Record the `EnvSpec` with every run so results are reproducible.
 - Prefer reward **plus** the metric vector in `nemesis.platform.metrics`; win
   rate alone is misleading while both sides learn.

@@ -71,7 +71,7 @@ def main() -> None:
     p.add_argument("--name", default=None, help="experiment name (dir under <artifacts>/experiments)")
     p.add_argument("--generations", type=int, default=5)
     p.add_argument("--blue-steps", type=int, default=4000, help="env steps of blue training per generation")
-    p.add_argument("--red-steps", type=int, default=4000, help="env steps of red training per generation (red hook)")
+    p.add_argument("--red-steps", type=int, default=4000, help="env steps of red PPO training per generation")
     p.add_argument("--episode-steps", type=int, default=500, help="CC4 episode length")
     p.add_argument("--n-steps", type=int, default=2048, help="transitions per PPO rollout/update per blue learner")
     p.add_argument("--batch-size", type=int, default=256)

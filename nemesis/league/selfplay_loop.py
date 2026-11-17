@@ -287,9 +287,8 @@ class ScriptedRedMatchFactory:
 
     def build(self, opponent: Opponent):  # pragma: no cover - intentionally unused
         raise NotImplementedError(
-            "No red learner wired. Provide a MatchFactory(side=Side.RED, can_learn=True) "
-            "backed by stage/red-training's nemesis.red_env to run the red-update phase. "
-            "See nemesis.league.protocol for the exact contract."
+            "ScriptedRedMatchFactory is a fixed-opponent baseline and cannot "
+            "build red learning matches; use the default RedMatchFactory."
         )
 
 

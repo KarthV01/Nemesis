@@ -556,6 +556,7 @@ if MODAL_AVAILABLE:  # pragma: no cover - needs modal installed + authed
         cpu=TRAIN_CPU,
         memory=TRAIN_MEMORY_MB,
         timeout=6 * 60 * 60,     # raise for longer runs (Modal max is 24 h)
+        block_network=True,
     )
 
     @app.function(**_FN_KW)
