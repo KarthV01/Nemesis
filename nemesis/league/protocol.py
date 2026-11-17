@@ -9,35 +9,12 @@ or red actually train. It knows only how to:
    back :class:`~nemesis.platform.metrics.EpisodeMetrics`, and to ``save`` the
    learner's weights into a checkpoint directory.
 
-Blue is implemented fully in :mod:`nemesis.league.selfplay_loop`
-(``BlueMatchFactory`` / ``BlueTeamMatch``) by reusing :class:`PPOLearner`.
-
-The RED learner is being built in parallel on branch ``stage/red-training``
-(``nemesis/red_env.py`` with a *make-red* interface) and is not importable here
-yet, so RED is expressed purely as this protocol:
-
-    ┌─────────────────────── THE RED-LEARNER HOOK ───────────────────────┐
-    │  The integrator provides an object implementing `MatchFactory` with │
-    │  `side == Side.RED`. Its `.build(blue_opponent)` must:              │
-    │    * construct stage/red-training's red-controllable env            │
-    │      (`nemesis.red_env`) with BLUE loaded *frozen* from             │
-    │      `blue_opponent.ref` (a learned checkpoint dir) or, for a       │
-    │      scripted blue, `blue_opponent.ref` as a blue agent class name; │
-    │    * wrap a red `PPOLearner` (or any learner with act/record/       │
-    │      predict/save) driving the red agent(s) on that env;            │
-    │    * return a `Match` whose `play_episode(learn=True)` updates red   │
-    │      and whose `save(checkpoint)` writes red weights into the        │
-    │      checkpoint dir so the league can freeze them next generation.  │
-    │  Set `can_learn = True`. The loop then runs the red-update phase    │
-    │  (red learner vs sampled frozen blue) symmetrically with the blue   │
-    │  phase, and registers each red snapshot as a learned RED opponent.  │
-    │                                                                      │
-    │  Pass the factory to `run_selfplay(..., red_factory=<yours>)`.      │
-    │  Until then the loop uses the scripted-red fallback                  │
-    │  (`ScriptedRedMatchFactory`, `can_learn = False`): red never        │
-    │  updates, but blue still trains against the frozen scripted red     │
-    │  roster, so the whole loop runs end-to-end today.                   │
-    └──────────────────────────────────────────────────────────────────────┘
+Both sides are implemented in :mod:`nemesis.league.selfplay_loop` with
+``BlueMatchFactory`` and ``RedMatchFactory``. They reuse :class:`PPOLearner`
+and share one CybORG simulator through the adapters in
+:mod:`nemesis.league.adversarial_envs`. Custom trainers can still implement
+this protocol and be passed to ``run_selfplay``. The opt-in
+``ScriptedRedMatchFactory`` preserves a fixed-red baseline for experiments.
 """
 
 from __future__ import annotations

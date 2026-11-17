@@ -1,12 +1,12 @@
-"""Run Nemesis adversarial self-play: blue PPO vs a frozen-opponent league.
+"""Run Nemesis alternating red/blue PPO self-play against a frozen league.
 
 Blue (five PPO policies) trains against a league of frozen red opponents,
 sampled newest-with-probability ``--latest-prob`` else uniformly from history,
 so it does not overfit to the latest rival. Each generation freezes the current
 blue weights into a new league snapshot and periodically evaluates blue against
-a *set* of frozen opponents. Red learning is the integrator hook (see
-``docs/selfplay.md`` / ``nemesis.league.protocol``); without it the loop uses
-the scripted red roster and runs end-to-end today.
+a *set* of frozen opponents. Red PPO then trains against a frozen blue snapshot
+and is itself frozen for subsequent blue generations. Scripted red agents seed
+the league with baseline opponents.
 
 Outputs (checkpoints, experiment logs, events) go under ``--artifacts``, which
 defaults to a .gitignore'd directory.

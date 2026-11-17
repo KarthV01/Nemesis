@@ -226,6 +226,33 @@ class SingleRedEnv(gym.Env):
         return f"{name} {self.host_slots[h_idx]}"
 
     # ------------------------------------------------------------------ #
+    # Shared-simulator adapter (arena / learned-vs-learned evaluation)
+    # ------------------------------------------------------------------ #
+    def attach_cyborg(self, cyborg) -> None:
+        """Attach this red observation/action codec to an existing simulator.
+
+        The arena drives red and blue actions in one shared CybORG step. It
+        reuses this class's exact training encoding instead of inventing a
+        second, subtly incompatible red checkpoint format.
+        """
+        self._cyborg = cyborg
+        self._known[:] = False
+        self._last_success = 2
+
+    def current_observation(self) -> np.ndarray:
+        """Encode the attached simulator's current observation for this agent."""
+        if self._cyborg is None:
+            raise RuntimeError("no CybORG simulator attached")
+        self._ingest_observation(self._cyborg.get_observation(self.agent))
+        return self._encode_observation()
+
+    def decode_action(self, action):
+        """Map a trained policy's fixed action vector to a CybORG action."""
+        if self._cyborg is None:
+            raise RuntimeError("no CybORG simulator attached")
+        return self._decode_action(action)
+
+    # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
     def _build_cyborg(self, seed):

@@ -216,12 +216,15 @@ class BlueMatchFactory:
         if opponent.side != str(Side.RED):
             raise ValueError(f"blue trains against a RED opponent, got {opponent.side}")
         if opponent.is_learned:
-            # A learned red opponent must be driven externally (red_env). The
-            # BlueFlatWrapper path only supports scripted reds baked into the
-            # scenario; wiring learned-red here is part of the red hook.
-            raise NotImplementedError(
-                f"learned red opponent {opponent.name!r} needs stage/red-training's red_env; "
-                "the scripted-red fallback only consumes scripted red opponents"
+            from nemesis.league.adversarial_envs import BlueAgainstRedEnv
+
+            checkpoint = opponent.local_weights_dir(self.store)
+            if checkpoint is None:
+                raise NotImplementedError("learned opponents require a local/Volume backend")
+            return BlueAgainstRedEnv(
+                checkpoint,
+                steps=self.config.episode_steps,
+                seed=self.config.seed,
             )
         spec = EnvSpec(
             steps=self.config.episode_steps,
@@ -269,15 +272,15 @@ class BlueMatchFactory:
 
 
 # --------------------------------------------------------------------------- #
-# Red side — the integrator hook (scripted fallback does not learn)
+# Red side: learned PPO plus an explicit scripted-only fallback
 # --------------------------------------------------------------------------- #
 class ScriptedRedMatchFactory:
-    """Placeholder red factory for before ``stage/red-training`` is wired.
+    """Opt-in fallback that leaves red fixed as a scripted roster.
 
     ``can_learn`` is ``False``, so :func:`run_selfplay` skips the red-update
     phase entirely and blue simply keeps training against the frozen scripted
-    red roster. The real red learner replaces this object — see the big hook
-    comment in :mod:`nemesis.league.protocol`.
+    red roster. The default :class:`RedMatchFactory` instead alternates learned
+    red updates against frozen blue snapshots.
     """
 
     side = Side.RED
@@ -288,6 +291,115 @@ class ScriptedRedMatchFactory:
             "No red learner wired. Provide a MatchFactory(side=Side.RED, can_learn=True) "
             "backed by stage/red-training's nemesis.red_env to run the red-update phase. "
             "See nemesis.league.protocol for the exact contract."
+        )
+
+
+class RedLearningMatch:
+    """One persistent red PPO learner playing a frozen learned blue team."""
+
+    side = Side.RED
+
+    def __init__(self, env, learner, opponent, config, *, seed=None):
+        self.env = env
+        self.learner = learner
+        self.opponent = opponent
+        self.config = config
+        self.seed = seed
+        self.episodes = 0
+
+    def play_episode(self, *, learn: bool, deterministic: bool = True,
+                     events=None, episode: int = 0):
+        seed = None if self.seed is None else self.seed + self.episodes
+        self.episodes += 1
+        observation, _ = self.env.reset(seed=seed)
+        red_reward = 0.0
+        blue_reward = 0.0
+        updates = 0
+        steps = 0
+        while steps < self.config.episode_steps:
+            action = (
+                self.learner.act(observation)
+                if learn
+                else self.learner.predict(observation, deterministic=deterministic)
+            )
+            next_observation, reward, terminated, truncated, info = self.env.step(action)
+            if learn:
+                updates += int(
+                    self.learner.record(
+                        reward, next_observation, terminated, truncated
+                    )
+                )
+            observation = next_observation
+            red_reward += float(reward)
+            blue_reward += float(info.get("blue_reward", -reward))
+            steps += 1
+            if terminated or truncated:
+                break
+        if events is not None and learn and updates:
+            events.log(
+                EventKind.TRAIN,
+                f"red PPO update(s): {updates} (vs {self.opponent.name})",
+                episode=episode,
+                updates=updates,
+            )
+        return EpisodeMetrics(
+            episode=episode,
+            steps=steps,
+            blue_reward=blue_reward,
+            red_reward=red_reward,
+            extra={"opponent": self.opponent.name, "phase": "train" if learn else "eval"},
+        )
+
+    def save(self, checkpoint: Checkpoint) -> None:
+        dst = checkpoint.local_dir()
+        if dst is None:
+            raise NotImplementedError("saving needs a local/Volume backend")
+        self.learner.save(
+            os.path.join(dst, "red_agent_0"),
+            extra={"agent": "red_agent_0", "opponent": self.opponent.name},
+        )
+
+    def close(self):
+        self.env.close()
+
+
+class RedMatchFactory:
+    """Learn red PPO against frozen blue snapshots in the alternating league."""
+
+    side = Side.RED
+    can_learn = True
+
+    def __init__(self, store: ArtifactStore, config: SelfPlayConfig):
+        self.store = store
+        self.config = config
+        self._learner = None
+
+    def build(self, opponent: Opponent) -> RedLearningMatch:
+        from nemesis.league.adversarial_envs import RedAgainstBlueEnv
+        from nemesis.ppo_learner import PPOLearner
+
+        if not opponent.is_learned or opponent.side != str(Side.BLUE):
+            raise ValueError("red training requires a frozen learned blue opponent")
+        checkpoint = opponent.local_weights_dir(self.store)
+        if checkpoint is None:
+            raise NotImplementedError("learned opponents require a local/Volume backend")
+        env = RedAgainstBlueEnv(
+            checkpoint,
+            steps=self.config.episode_steps,
+            seed=self.config.seed,
+        )
+        if self._learner is None:
+            self._learner = PPOLearner(
+                env.observation_space,
+                env.action_space,
+                n_steps=self.config.n_steps,
+                batch_size=self.config.batch_size,
+                total_timesteps=self.config.generations * self.config.red_steps_per_gen,
+                seed=self.config.seed,
+                verbose=self.config.verbose,
+            )
+        return RedLearningMatch(
+            env, self._learner, opponent, self.config, seed=self.config.seed
         )
 
 
@@ -305,9 +417,9 @@ def run_selfplay(
 ) -> League:
     """Run alternating-update self-play and return the populated :class:`League`.
 
-    Parameters mirror the module docstring. ``red_factory`` is the integrator
-    hook: pass a learning red :class:`MatchFactory` to enable the red-update
-    phase; the default scripted fallback skips it.
+    Parameters mirror the module docstring. The default ``red_factory`` trains
+    PPO red against each frozen blue generation. Pass
+    :class:`ScriptedRedMatchFactory` explicitly to disable red learning.
     """
     store = store or ArtifactStore(config.artifacts_root)
     league = league or League(store, name=config.name, seed=config.seed)
@@ -324,7 +436,7 @@ def run_selfplay(
         events = EventLog(ev_fh)
 
     blue_factory = blue_factory or BlueMatchFactory(store, config)
-    red_factory = red_factory or ScriptedRedMatchFactory()
+    red_factory = red_factory or RedMatchFactory(store, config)
     red_can_learn = bool(getattr(red_factory, "can_learn", False))
 
     try:
@@ -365,10 +477,9 @@ def run_selfplay(
             else:
                 events.log(
                     EventKind.TRAIN,
-                    f"gen {g}: red-update phase skipped (scripted-red fallback). "
-                    "Wire stage/red-training's red_env via run_selfplay(red_factory=...) to enable it.",
+                    f"gen {g}: red-update phase skipped (explicit scripted-red fallback).",
                     episode=g,
-                    hook="stage/red-training:nemesis.red_env",
+                    hook="ScriptedRedMatchFactory",
                 )
 
             # --- periodic league-wide evaluation ------------------------ #
@@ -494,5 +605,6 @@ __all__ = [
     "BlueTeamMatch",
     "BlueMatchFactory",
     "ScriptedRedMatchFactory",
+    "RedMatchFactory",
     "run_selfplay",
 ]

@@ -214,10 +214,10 @@ def test_standings_persist_across_instances(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# End-to-end smoke test with scripted red (CybORG + SB3). Skips if slow/missing.
+# End-to-end smoke test for alternating blue/red PPO (CybORG + SB3).
 # --------------------------------------------------------------------------- #
 @pytest.mark.slow
-def test_selfplay_smoke_scripted_red(tmp_path):
+def test_selfplay_smoke_alternating_learners(tmp_path):
     pytest.importorskip("CybORG")
     pytest.importorskip("stable_baselines3")
     from nemesis.league.selfplay_loop import SelfPlayConfig, run_selfplay
@@ -237,9 +237,12 @@ def test_selfplay_smoke_scripted_red(tmp_path):
     store = ArtifactStore(tmp_path)
     league = run_selfplay(config, store=store)
 
-    # A blue snapshot was frozen and the red roster registered.
+    # Both learned sides were frozen; the scripted red remains as the seed
+    # opponent for generation one and future league diversity.
     assert league.latest(Side.BLUE) is not None
-    assert len(league.opponents(Side.RED)) == 1
+    assert league.latest(Side.RED) is not None
+    assert len(league.opponents(Side.RED)) == 2
+    assert any(opponent.is_learned for opponent in league.opponents(Side.RED))
     # best_policy promoted and experiment logs written.
     import os
 

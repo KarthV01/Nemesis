@@ -27,12 +27,14 @@ class MatchManager:
     def __init__(
         self,
         root: str = "runs/arena",
+        artifact_root: Optional[str] = None,
         image: str = "nemesis-runtime:local",
         docker_bin: str = "docker",
         max_concurrent: int = 2,
     ):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self.artifact_root = Path(artifact_root).resolve() if artifact_root else self.root.parent
         self.image = image
         self.docker_bin = docker_bin
         self.max_concurrent = max_concurrent
@@ -45,12 +47,25 @@ class MatchManager:
             "scenarios": ["cc4"],
             "formats": ["5v5", "1v1"],
             "roles": {side: sorted(roles) for side, roles in ROLE_AGENTS.items()},
-            "checkpoints": {"red": [], "blue": []},
+            "checkpoints": {
+                "red": self._checkpoint_refs("red"),
+                "blue": self._checkpoint_refs("blue"),
+            },
             "limits": {"steps": {"min": 1, "max": 500}, "max_concurrent": self.max_concurrent},
         }
 
     def submit(self, request: MatchRequest) -> Dict:
         request.validate()
+        available = {
+            "red": set(self._checkpoint_refs("red")),
+            "blue": set(self._checkpoint_refs("blue")),
+        }
+        for side, reference in (
+            ("red", request.red_checkpoint),
+            ("blue", request.blue_checkpoint),
+        ):
+            if reference and reference not in available[side]:
+                raise ValueError(f"unknown {side} checkpoint {reference!r}")
         with self._lock:
             active = sum(j["status"] in ("queued", "running") for j in self._jobs.values())
             if active >= self.max_concurrent:
@@ -83,8 +98,10 @@ class MatchManager:
             "--security-opt", "no-new-privileges:true",
             "--pids-limit", "256", "--memory", "4g", "--cpus", "2",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=512m",
+            "-v", f"{self.artifact_root}:/artifacts:ro",
             "-v", f"{match_dir}:/arena", self.image,
             "scripts/arena_match.py", "--config", "/arena/config.json", "--output", "/arena",
+            "--artifacts", "/artifacts",
         ]
         self._update(match_id, status="running", started_at=time.time())
         try:
@@ -138,6 +155,43 @@ class MatchManager:
 
     def events_path(self, match_id: str) -> Path:
         return self.match_dir(match_id) / "events.jsonl"
+
+    def _checkpoint_refs(self, side: str) -> List[str]:
+        """Return complete, loadable checkpoint directories under the artifact root."""
+        def complete(path: Path) -> bool:
+            prefix = f"{side}_agent_"
+            return any(
+                agent.is_dir()
+                and agent.name.startswith(prefix)
+                and (agent / "latest.json").is_file()
+                for agent in path.iterdir()
+            )
+
+        refs = []
+        side_root = self.artifact_root / side
+        if side_root.is_dir():
+            best = side_root / "best_policy"
+            if best.is_dir() and complete(best):
+                refs.append(best.relative_to(self.artifact_root).as_posix())
+            for run in side_root.iterdir():
+                if not run.is_dir() or run.name == "best_policy":
+                    continue
+                for checkpoint in run.iterdir():
+                    if not checkpoint.is_dir() or not checkpoint.name.startswith("checkpoint_"):
+                        continue
+                    if complete(checkpoint):
+                        refs.append(checkpoint.relative_to(self.artifact_root).as_posix())
+        selfplay_root = self.artifact_root / "selfplay"
+        if selfplay_root.is_dir():
+            for generation in selfplay_root.glob("generation_*"):
+                checkpoint = generation / side
+                if checkpoint.is_dir() and complete(checkpoint):
+                    refs.append(checkpoint.relative_to(self.artifact_root).as_posix())
+        if side == "blue":
+            legacy = self.artifact_root / "ppo_team"
+            if legacy.is_dir() and complete(legacy):
+                refs.append("ppo_team/default")
+        return sorted(refs)
 
 
 __all__ = ["ArenaUnavailable", "MatchManager"]

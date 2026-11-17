@@ -33,6 +33,11 @@ The live viewer and saved replay buttons both consume `events.jsonl` through
 the same SSE endpoint. Restarting the dashboard does not remove completed
 matches; it discovers them from the artifact directory.
 
-The checkpoint selectors intentionally show **built-in policy** until a team
-has an arena-compatible checkpoint adapter. The API rejects a non-empty
-checkpoint reference rather than silently running a different policy.
+The checkpoint selectors list complete blue and red PPO snapshots from the
+artifact store. A submitted checkpoint is mounted read-only into the sandbox
+and loaded by the arena runner. Either side may use a learned checkpoint or a
+built-in scripted policy. In 1v1, only each side's `agent_0` checkpoint acts;
+in 5v5, the blue team's five policy directories are loaded and a single red
+checkpoint controls `red_agent_0` while the remaining red slots use the
+selected built-in roster. Invalid, incomplete, cross-side, and path-traversal
+references are rejected before Docker is launched.

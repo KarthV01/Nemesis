@@ -64,7 +64,12 @@ def _state_snapshot(env) -> Dict[str, object]:
     }
 
 
-def run_match(request: MatchRequest, output_dir: Path) -> Dict[str, object]:
+def run_match(
+    request: MatchRequest,
+    output_dir: Path,
+    *,
+    artifact_root: Path = Path("/artifacts"),
+) -> Dict[str, object]:
     """Run a finite match. The caller is responsible for process isolation."""
     request.validate()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -80,22 +85,35 @@ def run_match(request: MatchRequest, output_dir: Path) -> Dict[str, object]:
             phase="started",
             config=request.as_dict(),
         )
-        env = _build_scripted_env(request)
+        learned = None
+        if request.red_checkpoint or request.blue_checkpoint:
+            from nemesis.arena.learned import LearnedArena
+
+            learned = LearnedArena(request, artifact_root)
+            learned.reset()
+            env = learned.raw
+        else:
+            env = _build_scripted_env(request)
         blue_total = 0.0
         red_total = 0.0
         previous_state = None
         completed_steps = 0
         try:
-            env.reset(seed=request.seed)
+            if learned is None:
+                env.reset(seed=request.seed)
             interfaces = env.environment_controller.agent_interfaces
             for step in range(1, request.steps + 1):
-                env.step()
+                selected_actions = {}
+                if learned is None:
+                    env.step()
+                else:
+                    selected_actions, _, _ = learned.step()
                 completed_steps = step
                 for name in env.active_agents:
                     side = name.split("_", 1)[0]
                     if side not in ("red", "blue"):
                         continue
-                    action = env.get_last_action(name)
+                    action = selected_actions.get(name, env.get_last_action(name))
                     action = action[0] if isinstance(action, list) else action
                     if action is None or type(action).__name__ == "Sleep":
                         continue
@@ -139,7 +157,7 @@ def run_match(request: MatchRequest, output_dir: Path) -> Dict[str, object]:
                     time.sleep(request.delay)
         finally:
             try:
-                env.close()
+                (learned or env).close()
             except Exception:
                 pass
 

@@ -53,7 +53,7 @@ def test_single_active_agent_only_delegates_selected_slot():
         ({"format": "1v1"}, "red_role"),
         ({"steps": 0}, "steps"),
         ({"scenario": "unknown"}, "cc4"),
-        ({"blue_checkpoint": "untrusted/path"}, "no arena-compatible checkpoint"),
+        ({"blue_checkpoint": "untrusted/path"}, "invalid blue checkpoint"),
         ({"extra": True}, "unknown fields"),
     ],
 )
@@ -67,14 +67,14 @@ def test_manager_runs_hardened_container_and_saves_job(monkeypatch, tmp_path):
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        mount = command[command.index("-v") + 1]
+        mount = next(value for value in command if value.endswith(":/arena"))
         match_dir = mount.rsplit(":/arena", 1)[0]
         with open(f"{match_dir}/result.json", "w", encoding="utf-8") as fh:
             json.dump({"status": "completed", "winner": "draw"}, fh)
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    manager = MatchManager(str(tmp_path), image="arena:test")
+    manager = MatchManager(str(tmp_path), artifact_root=str(tmp_path), image="arena:test")
     submitted = manager.submit(MatchRequest(steps=2, delay=0))
     completed = wait_for(lambda: manager.get(submitted["id"])["status"] == "completed")
 
@@ -84,7 +84,11 @@ def test_manager_runs_hardened_container_and_saves_job(monkeypatch, tmp_path):
     assert "--network" in command and command[command.index("--network") + 1] == "none"
     assert "--read-only" in command
     assert ["--cap-drop", "ALL"] == command[command.index("--cap-drop"):command.index("--cap-drop") + 2]
-    assert command[-5:] == ["scripts/arena_match.py", "--config", "/arena/config.json", "--output", "/arena"]
+    assert command[-7:] == [
+        "scripts/arena_match.py", "--config", "/arena/config.json", "--output", "/arena",
+        "--artifacts", "/artifacts",
+    ]
+    assert f"{tmp_path}:/artifacts:ro" in command
     assert manager.get(submitted["id"])["result"]["winner"] == "draw"
 
 
@@ -101,9 +105,27 @@ def test_manager_reports_container_failure(monkeypatch, tmp_path):
     assert "image missing" in manager.get(job["id"])["error"]
 
 
+def test_manager_catalogs_and_validates_complete_checkpoints(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    checkpoint = artifacts / "blue" / "run-a" / "checkpoint_000001" / "blue_agent_0"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "latest.json").write_text('{"checkpoint":"step_000000001"}')
+    selfplay = artifacts / "selfplay" / "generation_000002" / "red" / "red_agent_0"
+    selfplay.mkdir(parents=True)
+    (selfplay / "latest.json").write_text('{"checkpoint":"step_000000001"}')
+    manager = MatchManager(str(artifacts / "arena"), artifact_root=str(artifacts))
+    assert manager.catalog()["checkpoints"]["blue"] == ["blue/run-a/checkpoint_000001"]
+    assert manager.catalog()["checkpoints"]["red"] == [
+        "selfplay/generation_000002/red"
+    ]
+    with pytest.raises(ValueError, match="unknown blue checkpoint"):
+        manager.submit(MatchRequest(blue_checkpoint="blue/missing/checkpoint_000001"))
+
+
 def test_arena_http_submit_status_and_catalog(monkeypatch, tmp_path):
     def fake_run(command, **kwargs):
-        match_dir = command[command.index("-v") + 1].rsplit(":/arena", 1)[0]
+        mount = next(value for value in command if value.endswith(":/arena"))
+        match_dir = mount.rsplit(":/arena", 1)[0]
         with open(f"{match_dir}/events.jsonl", "w", encoding="utf-8") as fh:
             fh.write(json.dumps({"id": 0, "t": 1, "kind": "system", "text": "complete"}) + "\n")
         with open(f"{match_dir}/result.json", "w", encoding="utf-8") as fh:

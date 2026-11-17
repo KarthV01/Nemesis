@@ -17,9 +17,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--artifacts", default="/artifacts")
     args = parser.parse_args()
     payload = json.loads(Path(args.config).read_text(encoding="utf-8"))
-    run_match(MatchRequest.from_dict(payload), Path(args.output))
+    run_match(
+        MatchRequest.from_dict(payload),
+        Path(args.output),
+        artifact_root=Path(args.artifacts),
+    )
 
 
 if __name__ == "__main__":

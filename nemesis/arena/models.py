@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
 from typing import Dict, Optional
 
 
@@ -25,6 +26,10 @@ ROLE_AGENTS = {
         "contain": "BlueWarden",
     },
 }
+
+CHECKPOINT_REF = re.compile(
+    r"^(?:blue|red|ppo_team|selfplay)/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?$"
+)
 
 
 @dataclass(frozen=True)
@@ -64,8 +69,18 @@ class MatchRequest:
             raise ValueError("steps must be between 1 and 500")
         if not 0 <= float(self.delay) <= 5:
             raise ValueError("delay must be between 0 and 5 seconds")
-        if self.red_checkpoint or self.blue_checkpoint:
-            raise ValueError("the selected team has no arena-compatible checkpoint")
+        for side, reference in (
+            ("red", self.red_checkpoint),
+            ("blue", self.blue_checkpoint),
+        ):
+            if reference and not CHECKPOINT_REF.fullmatch(reference):
+                raise ValueError(f"invalid {side} checkpoint reference")
+            if reference and not reference.startswith(f"{side}/") and not (
+                side == "blue" and reference.startswith("ppo_team/")
+            ) and not (
+                reference.startswith("selfplay/") and reference.endswith(f"/{side}")
+            ):
+                raise ValueError(f"{side} checkpoint must reference a {side} policy")
         if self.format == "1v1":
             if self.red_role not in ROLE_AGENTS["red"]:
                 raise ValueError("a valid red_role is required for 1v1")

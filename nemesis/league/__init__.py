@@ -10,9 +10,9 @@ Import layout
   ``Opponent``, ``Standing``). Pure logic: no CybORG, SB3 or torch, so it
   imports instantly and is unit-testable with a fake policy.
 * :mod:`nemesis.league.protocol` — the ``Match`` / ``MatchFactory`` seam the
-  self-play loop drives, and the documented RED-learner hook for the integrator.
+  self-play loop drives for either trainable side.
 * :mod:`nemesis.league.selfplay_loop` — the alternating-update training loop and
-  the blue PPO implementation. Imported explicitly (it pulls in SB3/torch), so
+  red/blue PPO implementations. Imported explicitly (it pulls in SB3/torch), so
   it is *not* re-exported here.
 """
 
