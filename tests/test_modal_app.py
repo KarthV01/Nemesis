@@ -21,6 +21,7 @@ from nemesis.platform.metrics import MetricsLog, EpisodeMetrics, summarize
 from nemesis.platform.storage import LocalBackend
 
 import modal_app
+import modal_app.api as modal_api
 from modal_app.images import MODAL_AVAILABLE, build_image
 from modal_app.volume_backend import VolumeBackend, maybe_commit
 from modal_app.train import (
@@ -274,3 +275,42 @@ def test_single_agent_training_checkpoints_and_resumes(tmp_path):
     assert first["side"] == "red"
     assert second["timesteps"] > first["timesteps"]
     assert store.latest_checkpoint(Side.RED, "red") is not None
+
+
+def test_modal_api_reads_persisted_match_and_catalog(monkeypatch, tmp_path):
+    arena = tmp_path / "arena"
+    match = arena / "abc123def456"
+    match.mkdir(parents=True)
+    (match / "config.json").write_text('{"steps": 2}', encoding="utf-8")
+    (match / "job.json").write_text(
+        '{"id":"abc123def456","status":"completed","created_at":1}',
+        encoding="utf-8",
+    )
+    (match / "result.json").write_text(
+        '{"winner":"blue","blue_reward":1,"red_reward":-1}',
+        encoding="utf-8",
+    )
+    checkpoint = tmp_path / "selfplay" / "generation_000001" / "blue" / "blue_agent_0"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "latest.json").write_text("{}", encoding="utf-8")
+    experiment = tmp_path / "experiments" / "selfplay-1"
+    experiment.mkdir(parents=True)
+    (experiment / "events.jsonl").write_text(
+        '{"id":0,"kind":"system","text":"self-play complete"}\n',
+        encoding="utf-8",
+    )
+    (experiment / "evaluations.jsonl").write_text("", encoding="utf-8")
+    monkeypatch.setattr(modal_api, "ARENA_PATH", arena)
+    monkeypatch.setattr(modal_api, "ARTIFACTS_PATH", str(tmp_path))
+
+    job = modal_api._job("abc123def456")
+    assert job["result"]["winner"] == "blue"
+    assert modal_api._catalog()["checkpoints"]["blue"] == [
+        "selfplay/generation_000001/blue"
+    ]
+    assert modal_api._runs()[0]["status"] == "completed"
+    assert modal_api._run_dir("selfplay-1") == experiment
+    with pytest.raises(KeyError):
+        modal_api._match_dir("../escape")
+    with pytest.raises(KeyError):
+        modal_api._run_dir("../escape")

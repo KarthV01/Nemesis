@@ -20,6 +20,13 @@
   </span>
 </header>
 
+<section id="connection" aria-label="compute connection">
+  <label>Modal API URL<input id="api-base" type="url" placeholder="same origin (local)" autocomplete="url"></label>
+  <label>launch token<input id="api-token" type="password" placeholder="required to start matches" autocomplete="off"></label>
+  <button id="save-connection" type="button">[save connection]</button>
+  <span id="connection-status">local dashboard</span>
+</section>
+
 <section id="arena" hidden aria-label="arena match controls">
   <form id="match-form">
     <label>red team<select id="red-team" name="red_team"></select></label>
@@ -40,6 +47,8 @@
     <span id="match-result"></span>
     <span class="saved-label">saved replays</span>
     <span id="replays"></span>
+    <span class="saved-label">training runs</span>
+    <span id="training-runs"></span>
   </div>
 </section>
 

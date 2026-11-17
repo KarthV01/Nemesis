@@ -151,10 +151,13 @@ powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 run modal_ap
 
 The Docker command builds the pinned CPU PyTorch image automatically and mounts
 `runs/` at `/artifacts`. The Modal command builds its matching PyTorch image,
-requests eight CPUs, attaches the `nemesis-artifacts` Volume, and releases the
+requests four physical CPU cores and 8 GiB RAM, attaches the
+`nemesis-artifacts` Volume, and releases the
 worker when training finishes. Docker resumes automatically; pass the same
 Modal `--run-id` to continue a cloud run from its latest checkpoint.
 See [docs/modal.md](docs/modal.md) for Volume inspection and download commands.
+For the production Vercel-dashboard + Modal-compute topology, use the exact
+commands in [docs/deployment.md](docs/deployment.md).
 
 ## Usage
 

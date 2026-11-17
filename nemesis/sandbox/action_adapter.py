@@ -35,6 +35,8 @@ class TestAction(str, Enum):
     design — the adapter cannot emit one because none exists to emit.
     """
 
+    __test__ = False  # This is a domain enum, not a pytest test class.
+
     CHECK_HEALTH = "check_service_health"      # liveness/health probe (read-only)
     COLLECT_LOGS = "collect_logs"              # read recent logs (read-only)
     RESTART_SERVICE = "restart_service"        # restart the target service

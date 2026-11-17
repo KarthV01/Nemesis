@@ -4,11 +4,10 @@ The real work lives in :func:`run_training` — a *plain* callable with no Modal
 dependency. It reuses the existing team-training logic (one
 :class:`nemesis.ppo_learner.PPOLearner` per blue agent, all acting every step in
 one shared CybORG episode) and writes checkpoints through
-``ArtifactStore(backend)``. The Modal functions :func:`train_blue` /
-:func:`train_red` are thin wrappers that build a :class:`VolumeBackend` over the
-mounted Volume and call :func:`run_training`; a local ``--dry-run`` calls the
-very same function with a :class:`LocalBackend`. The logic is therefore fully
-tested off-Modal.
+``ArtifactStore(backend)``. The Modal functions :func:`train_blue`,
+:func:`train_red`, and :func:`train_selfplay` are thin wrappers around the same
+PyTorch training paths used locally, with a :class:`VolumeBackend` over the
+mounted Volume.
 
 ``modal`` is imported only inside the guarded block at the bottom, so this
 module imports and its functions run with ``modal`` absent.
@@ -498,6 +497,58 @@ def _train_red_on_volume(run_id, timesteps, *, steps, n_steps, batch_size,
     return result
 
 
+def _train_selfplay_on_volume(
+    run_id,
+    *,
+    generations,
+    blue_steps,
+    red_steps,
+    episode_steps,
+    n_steps,
+    batch_size,
+    eval_every,
+    eval_episodes,
+    seed,
+):
+    """Run alternating red/blue PPO entirely on Modal's mounted Volume."""
+    from nemesis.league.selfplay_loop import SelfPlayConfig, run_selfplay
+
+    backend = VolumeBackend(ARTIFACTS_PATH, volume=volume)
+    store = ArtifactStore(backend)
+    run_id = run_id or default_run_id("selfplay")
+    config = SelfPlayConfig(
+        name=run_id,
+        generations=generations,
+        blue_steps_per_gen=blue_steps,
+        red_steps_per_gen=red_steps,
+        episode_steps=episode_steps,
+        n_steps=n_steps,
+        batch_size=batch_size,
+        eval_every=eval_every,
+        eval_episodes=eval_episodes,
+        seed=seed,
+        artifacts_root=ARTIFACTS_PATH,
+        verbose=1,
+    )
+    league = run_selfplay(config, store=store)
+    backend.commit()
+    result = {
+        "run_id": run_id,
+        "generations": generations,
+        "snapshots": len(league),
+        "latest_blue": (
+            league.latest(Side.BLUE).ref if league.latest(Side.BLUE) else None
+        ),
+        "latest_red": (
+            league.latest(Side.RED).ref if league.latest(Side.RED) else None
+        ),
+        "events": f"experiments/{run_id}/events.jsonl",
+        "evaluations": f"experiments/{run_id}/evaluations.jsonl",
+    }
+    print("self-play training complete:", json.dumps(result, indent=2))
+    return result
+
+
 if MODAL_AVAILABLE:  # pragma: no cover - needs modal installed + authed
     _FN_KW = dict(
         image=image,
@@ -527,6 +578,33 @@ if MODAL_AVAILABLE:  # pragma: no cover - needs modal installed + authed
             batch_size=batch_size, save_every=save_every, seed=seed,
         )
 
+    @app.function(**_FN_KW)
+    def train_selfplay(
+        run_id: Optional[str] = None,
+        generations: int = 5,
+        blue_steps: int = 4_000,
+        red_steps: int = 4_000,
+        episode_steps: int = 500,
+        n_steps: int = 2_048,
+        batch_size: int = 256,
+        eval_every: int = 1,
+        eval_episodes: int = 3,
+        seed: Optional[int] = None,
+    ):
+        """Train alternating red and blue PPO policies on Modal."""
+        return _train_selfplay_on_volume(
+            run_id,
+            generations=generations,
+            blue_steps=blue_steps,
+            red_steps=red_steps,
+            episode_steps=episode_steps,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            eval_every=eval_every,
+            eval_episodes=eval_episodes,
+            seed=seed,
+        )
+
 
 __all__ = [
     "run_training",
@@ -537,4 +615,5 @@ __all__ = [
     "make_dummy_team_env",
     "DummyTeamEnv",
     "default_run_id",
+    "_train_selfplay_on_volume",
 ]

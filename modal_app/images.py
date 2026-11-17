@@ -42,6 +42,7 @@ PIP_PACKAGES = [
     "stable-baselines3==2.3.2",
     "pettingzoo==1.24.3",
     "gymnasium",
+    "fastapi[standard]",
 ]
 
 #: Repo root and the vendored CybORG submodule (copied into the image at build).

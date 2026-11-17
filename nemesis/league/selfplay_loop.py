@@ -7,11 +7,10 @@ Each *generation* does two phases:
    trains for a while against a frozen red opponent *sampled from the league*
    (newest with probability ``latest_prob``, otherwise a uniformly-drawn past
    one). The frozen red is baked into the scenario as its ``red_agent_class``.
-2. **Red update** — symmetric: a red learner trains against a frozen blue
-   opponent sampled from the league. The red learner lives on branch
-   ``stage/red-training`` and is injected through :class:`MatchFactory` (see
-   :mod:`nemesis.league.protocol`). Until it is wired, the loop uses the
-   scripted-red fallback and *skips* the red update, logging where it plugs in.
+2. **Red update** — a persistent red PPO learner trains against a frozen blue
+   team sampled from the league, then freezes its own snapshot for future blue
+   generations. An explicit scripted-only factory remains available for
+   baseline experiments.
 
 After each generation the current blue weights are frozen into a new league
 snapshot, and periodically blue is evaluated against a *set* of frozen red
@@ -60,7 +59,7 @@ class SelfPlayConfig:
     generations: int = 5
     #: env steps of blue training per generation (summed across the team)
     blue_steps_per_gen: int = 4000
-    #: env steps of red training per generation (used by the red hook when wired)
+    #: env steps of red training per generation
     red_steps_per_gen: int = 4000
     episode_steps: int = 500
     #: transitions per PPO rollout / update, per blue learner
@@ -466,14 +465,16 @@ def run_selfplay(
             )
             blue_factory.save(blue_snap.checkpoint(store))
             events.log(EventKind.TRAIN, f"gen {g}: froze blue -> {blue_snap.name}", episode=g, snapshot=blue_snap.name)
+            _commit_backend(store)
 
-            # --- red update phase (hook) -------------------------------- #
+            # --- red update phase --------------------------------------- #
             if red_can_learn:
                 blue_opp = league.sample(Side.BLUE, latest_prob=config.latest_prob, rng=rng)
                 if blue_opp is not None:
                     events.log(EventKind.TRAIN, f"gen {g}: red trains vs frozen blue {blue_opp.name}", episode=g, opponent=blue_opp.name)
                     red_snap = _red_update_phase(red_factory, blue_opp, config, events, g, store, league)
                     events.log(EventKind.TRAIN, f"gen {g}: froze red -> {red_snap.name}", episode=g, snapshot=red_snap.name)
+                    _commit_backend(store)
             else:
                 events.log(
                     EventKind.TRAIN,
@@ -487,6 +488,7 @@ def run_selfplay(
                 overall = _evaluate(blue_factory, league, config, events, store, generation=g, rng=rng)
                 if overall is not None and (best is None or overall.blue_reward > best[0]):
                     best = (overall.blue_reward, blue_snap)
+                _commit_backend(store)
 
         # Promote the best (by eval) blue snapshot, else the latest.
         chosen = best[1] if best is not None else league.latest(Side.BLUE)
@@ -496,10 +498,18 @@ def run_selfplay(
 
         _write_standings(store, config, league)
         events.log(EventKind.SYSTEM, f"self-play '{config.name}' complete: {len(league)} snapshots")
+        _commit_backend(store)
     finally:
         if owns_events and ev_fh is not None:
             ev_fh.close()
     return league
+
+
+def _commit_backend(store: ArtifactStore) -> None:
+    """Publish progress when the artifact backend supports explicit commits."""
+    commit = getattr(store.backend, "commit", None)
+    if commit is not None:
+        commit()
 
 
 def _train_phase(blue_factory, red_opp: Opponent, budget_steps: int, config: SelfPlayConfig, events: EventLog, generation: int) -> None:
@@ -519,9 +529,8 @@ def _train_phase(blue_factory, red_opp: Opponent, budget_steps: int, config: Sel
 def _red_update_phase(red_factory, blue_opp: Opponent, config: SelfPlayConfig, events: EventLog, generation: int, store: ArtifactStore, league: League) -> Opponent:
     """Run the red learner vs a frozen blue, then freeze red into the league.
 
-    Only reached when the integrator supplies a learning red factory. The red
-    learner, env construction and metrics come entirely from that factory's
-    Match; this function just drives the budget and records the snapshot.
+    The learner, environment construction, and metrics come from the selected
+    red factory's Match; this function drives the budget and freezes a snapshot.
     """
     match = red_factory.build(blue_opp)
     steps = 0

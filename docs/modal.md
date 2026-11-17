@@ -6,12 +6,9 @@ persists their results to a **Modal Volume**, with the *same code path* runnable
 locally. It depends only on `nemesis.platform` (the storage + envs contracts)
 and on the existing `nemesis.ppo_learner` / `nemesis.checkpoints` training code.
 
-> **Nothing here is launched yet.** The Modal CLI has no auth token in this
-> workspace. Every entrypoint has a `--local` / `run_training(...)` path that
-> runs now without Modal installed or authenticated. `import modal` is guarded
-> everywhere, so every module imports and every test passes with `modal` absent.
-> Run the Modal commands in [Running on Modal](#running-on-modal) only after you
-> add your key.
+The production topology and exact deployment commands are in
+[`docs/deployment.md`](deployment.md). Modal runs compute and the persistent API;
+Vercel serves only the static dashboard.
 
 Everything trained here runs inside CybORG's **simulated** CAGE-Challenge-4
 enterprise network (no real hosts, services, or exploits), exactly as the rest
@@ -144,6 +141,8 @@ modal run scripts/modal_poc.py        # runs the POC's Modal path
 modal run modal_app/train.py::train_blue --timesteps 200000 --run-id blue-$(date +%s)
 modal run scripts/modal_train.py --side blue --timesteps 200000
 modal run scripts/modal_train.py --side red --timesteps 200000
+modal run scripts/modal_train.py --side selfplay --generations 5
+modal deploy modal_app/api.py
 ```
 
 ## NOTE FOR INTEGRATOR

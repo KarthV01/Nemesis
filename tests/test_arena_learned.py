@@ -63,10 +63,17 @@ def test_learned_red_and_blue_checkpoint_duel(tmp_path):
         delay=0,
         seed=1,
     )
-    result = run_match(request, tmp_path / "match", artifact_root=artifacts)
+    syncs = []
+    result = run_match(
+        request,
+        tmp_path / "match",
+        artifact_root=artifacts,
+        sync=lambda: syncs.append(True),
+    )
 
     assert result["status"] == "completed"
     assert result["steps"] == 2
+    assert syncs == [True]
     events = [json.loads(line) for line in (tmp_path / "match" / "events.jsonl").read_text().splitlines()]
     acting = {event.get("agent") for event in events if event["kind"] in {"red", "blue"}}
     assert acting <= {"red_agent_0", "blue_agent_0"}

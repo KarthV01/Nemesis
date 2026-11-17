@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Dict
+from typing import Callable, Dict, Optional
 
 from nemesis.arena.models import MatchRequest
 from nemesis.platform.events import EventKind, EventLog
@@ -69,6 +69,7 @@ def run_match(
     output_dir: Path,
     *,
     artifact_root: Path = Path("/artifacts"),
+    sync: Optional[Callable[[], None]] = None,
 ) -> Dict[str, object]:
     """Run a finite match. The caller is responsible for process isolation."""
     request.validate()
@@ -155,6 +156,8 @@ def run_match(
                     previous_state = state
                 if request.delay:
                     time.sleep(request.delay)
+                if sync is not None and step % 5 == 0:
+                    sync()
         finally:
             try:
                 (learned or env).close()
@@ -179,6 +182,8 @@ def run_match(
             result=result,
         )
     result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    if sync is not None:
+        sync()
     return result
 
 

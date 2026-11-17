@@ -11,7 +11,35 @@
 
   const MAX_LINES = 1200;
   const POLL_MS = 3000;
+  let metricsEndpoint = "/metrics";
   const el = (id) => document.getElementById(id);
+  const query = new URLSearchParams(window.location.search);
+  const requestedApi = query.get("api");
+  if (requestedApi) localStorage.setItem("nemesisApiBase", requestedApi);
+  let apiBase = (localStorage.getItem("nemesisApiBase") || "").replace(/\/$/, "");
+  const apiUrl = (path) => apiBase + path;
+  function apiFetch(path, options) {
+    const request = Object.assign({}, options || {});
+    request.headers = Object.assign({}, request.headers || {});
+    if (request.method === "POST") {
+      const token = sessionStorage.getItem("nemesisApiToken") || "";
+      if (token) request.headers.Authorization = `Bearer ${token}`;
+    }
+    return fetch(apiUrl(path), request);
+  }
+
+  el("api-base").value = apiBase;
+  el("api-token").value = sessionStorage.getItem("nemesisApiToken") || "";
+  el("connection-status").textContent = apiBase ? "checking Modal API" : "local dashboard";
+  el("save-connection").onclick = () => {
+    const base = el("api-base").value.trim().replace(/\/$/, "");
+    if (base) localStorage.setItem("nemesisApiBase", base);
+    else localStorage.removeItem("nemesisApiBase");
+    const token = el("api-token").value.trim();
+    if (token) sessionStorage.setItem("nemesisApiToken", token);
+    else sessionStorage.removeItem("nemesisApiToken");
+    window.location.reload();
+  };
 
   // ---- styling of the feed by kind ---------------------------------------- //
   const TAGS = {
@@ -91,7 +119,7 @@
   let source = null;
   function connectEvents(url) {
     if (source) source.close();
-    source = new EventSource(url);
+    source = new EventSource(apiUrl(url));
     source.onopen = () => setStatus("live");
     source.onerror = () => setStatus(source.readyState === EventSource.CLOSED ? "down" : "reconnecting");
     source.onmessage = (msg) => {
@@ -124,7 +152,7 @@
   }
 
   async function loadReplays() {
-    const response = await fetch("/api/matches", { cache: "no-store" });
+    const response = await apiFetch("/api/matches", { cache: "no-store" });
     if (!response.ok) return;
     const box = el("replays"); box.innerHTML = "";
     (await response.json()).matches.slice(0, 8).forEach((job) => {
@@ -136,6 +164,24 @@
     });
   }
 
+  async function loadTrainingRuns() {
+    const response = await apiFetch("/api/runs", { cache: "no-store" });
+    if (!response.ok) return;
+    const box = el("training-runs"); box.innerHTML = "";
+    (await response.json()).runs.slice(0, 8).forEach((run) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `${run.id} ${run.status}`;
+      button.onclick = () => {
+        clearFeed();
+        metricsEndpoint = `/api/runs/${encodeURIComponent(run.id)}/metrics`;
+        connectEvents(`/api/runs/${encodeURIComponent(run.id)}/events`);
+        pollMetrics();
+      };
+      box.appendChild(button);
+    });
+  }
+
   async function watchMatch(id, replay) {
     clearFeed();
     setMatchStatus(replay ? "replay" : "queued", id);
@@ -143,7 +189,7 @@
     const runButton = el("run-match"); runButton.disabled = true;
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 750));
-      const response = await fetch(`/api/matches/${id}`, { cache: "no-store" });
+      const response = await apiFetch(`/api/matches/${id}`, { cache: "no-store" });
       if (!response.ok) break;
       const job = await response.json();
       setMatchStatus(job.status, job.error || id);
@@ -158,8 +204,14 @@
   }
 
   async function initArena() {
-    const response = await fetch("/api/arena", { cache: "no-store" });
-    if (!response.ok) return;
+    const response = await apiFetch("/api/arena", { cache: "no-store" });
+    if (!response.ok) {
+      el("connection-status").className = "down";
+      el("connection-status").textContent = `API unavailable (${response.status})`;
+      return;
+    }
+    el("connection-status").className = "live";
+    el("connection-status").textContent = apiBase ? "Modal API connected" : "local API connected";
     const catalog = await response.json();
     el("arena").hidden = false;
     fillSelect("red-team", catalog.teams); fillSelect("blue-team", catalog.teams);
@@ -188,12 +240,12 @@
         delay: Number(el("delay").value),
       };
       el("run-match").disabled = true; el("match-result").textContent = "";
-      const created = await fetch("/api/matches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const created = await apiFetch("/api/matches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const job = await created.json();
-      if (!created.ok) { setMatchStatus("failed", job.error); el("run-match").disabled = false; return; }
+      if (!created.ok) { setMatchStatus("failed", job.error || job.detail); el("run-match").disabled = false; return; }
       watchMatch(job.id, false);
     };
-    loadReplays();
+    loadReplays(); loadTrainingRuns();
   }
   initArena().catch(() => {});
 
@@ -337,7 +389,7 @@
 
   async function pollMetrics() {
     try {
-      const res = await fetch("/metrics", { cache: "no-store" });
+      const res = await apiFetch(metricsEndpoint, { cache: "no-store" });
       if (!res.ok) throw new Error("metrics " + res.status);
       const payload = await res.json();
       el("metrics-sub").textContent = payload.count
