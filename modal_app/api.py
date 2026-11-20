@@ -259,7 +259,13 @@ if MODAL_AVAILABLE:  # pragma: no cover - requires a deployed Modal app
 
         @api.get("/health")
         def health():
-            return {"ok": True, "compute": "modal", "policy_runtime": "pytorch"}
+            return {
+                "ok": True,
+                "compute": "modal",
+                "policy_runtime": "pytorch",
+                "public_demo": True,
+                "public_max_steps": PUBLIC_MAX_STEPS,
+            }
 
         @api.get("/api/arena")
         def catalog():
