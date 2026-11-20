@@ -128,7 +128,13 @@
       if (event.phase === "completed") source.close();
     };
   }
-  connectEvents("/events");
+  // Do not open the idle SSE endpoint. A finite idle stream causes the browser's
+  // EventSource client to reconnect and replay the same prompt indefinitely.
+  setStatus("idle");
+  update({
+    kind: "system",
+    text: "Select a training run or launch an arena match to begin streaming.",
+  });
 
   // ---- arena: launch an isolated match, then consume its saved/live stream -- //
   function fillSelect(id, values) {
@@ -211,7 +217,10 @@
       return;
     }
     el("connection-status").className = "live";
-    el("connection-status").textContent = apiBase ? "Modal API connected" : "local API connected";
+    const savedToken = sessionStorage.getItem("nemesisApiToken") || "";
+    el("connection-status").textContent = apiBase
+      ? `Modal API connected · launch token ${savedToken ? "saved for this tab" : "missing"}`
+      : "local API connected";
     const catalog = await response.json();
     el("arena").hidden = false;
     fillSelect("red-team", catalog.teams); fillSelect("blue-team", catalog.teams);
@@ -230,6 +239,11 @@
     el("match-format").onchange = toggleRoles; toggleRoles();
     el("match-form").onsubmit = async (event) => {
       event.preventDefault();
+      if (apiBase && !sessionStorage.getItem("nemesisApiToken")) {
+        setMatchStatus("failed", "enter the launch token above, then save the connection");
+        el("api-token").focus();
+        return;
+      }
       const roleMatch = el("match-format").value === "1v1";
       const payload = {
         red_team: el("red-team").value, blue_team: el("blue-team").value,
@@ -242,7 +256,14 @@
       el("run-match").disabled = true; el("match-result").textContent = "";
       const created = await apiFetch("/api/matches", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const job = await created.json();
-      if (!created.ok) { setMatchStatus("failed", job.error || job.detail); el("run-match").disabled = false; return; }
+      if (!created.ok) {
+        const detail = created.status === 401
+          ? "launch token rejected; paste it again above and save the connection"
+          : job.error || job.detail;
+        setMatchStatus("failed", detail);
+        el("run-match").disabled = false;
+        return;
+      }
       watchMatch(job.id, false);
     };
     loadReplays(); loadTrainingRuns();
