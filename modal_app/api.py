@@ -1,8 +1,9 @@
 """Persistent Modal API for Vercel's static Nemesis dashboard.
 
 Vercel serves only browser assets. Match simulation and checkpoint access stay
-in isolated Modal containers with the shared artifact Volume mounted. Launches
-require a bearer token from the ``nemesis-api`` Modal Secret; read-only catalog,
+in isolated Modal containers with the shared artifact Volume mounted. Anonymous
+demo launches are tightly bounded; a bearer token from the ``nemesis-api``
+Modal Secret retains access to the full launch limits. Read-only catalog,
 status, replay, and event endpoints may be viewed publicly.
 """
 
@@ -30,6 +31,10 @@ from nemesis.arena.models import MatchRequest
 ARENA_PATH = Path(ARTIFACTS_PATH) / "arena"
 MATCH_ID_LENGTH = 12
 RUN_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+PUBLIC_MAX_STEPS = 100
+PUBLIC_MAX_ACTIVE = 2
+PUBLIC_COOLDOWN_SECONDS = 15
+PUBLIC_DAILY_LIMIT = 60
 
 
 def _match_dir(match_id: str) -> Path:
@@ -73,6 +78,42 @@ def _catalog() -> Dict:
         str(ARENA_PATH), artifact_root=ARTIFACTS_PATH, max_concurrent=4
     )
     return manager.catalog()
+
+
+def _valid_launch_token(authorization: str | None, expected: str | None) -> bool:
+    supplied = authorization.removeprefix("Bearer ") if authorization else ""
+    return bool(expected and supplied and secrets.compare_digest(supplied, expected))
+
+
+def _public_launch_error(now: float | None = None) -> str | None:
+    """Return a bounded-public-demo rejection reason, if any."""
+    now = time.time() if now is None else now
+    active = 0
+    recent_public = 0
+    latest_public = 0.0
+    if ARENA_PATH.is_dir():
+        for path in ARENA_PATH.iterdir():
+            job_path = path / "job.json"
+            if not path.is_dir() or not job_path.is_file():
+                continue
+            try:
+                job = _read_json(job_path)
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            if job.get("status") in ("queued", "running"):
+                active += 1
+            if job.get("access") == "public":
+                created_at = float(job.get("created_at", 0))
+                latest_public = max(latest_public, created_at)
+                if created_at >= now - 24 * 60 * 60:
+                    recent_public += 1
+    if active >= PUBLIC_MAX_ACTIVE:
+        return "public demo is busy; try again after a match finishes"
+    if latest_public > now - PUBLIC_COOLDOWN_SECONDS:
+        return "public demo cooldown is active; try again in a few seconds"
+    if recent_public >= PUBLIC_DAILY_LIMIT:
+        return "public demo daily launch limit reached; try again tomorrow"
+    return None
 
 
 def _empty_metrics() -> Dict:
@@ -216,12 +257,6 @@ if MODAL_AVAILABLE:  # pragma: no cover - requires a deployed Modal app
             except RuntimeError:
                 pass
 
-        def require_token(authorization: str | None) -> None:
-            expected = os.environ.get("NEMESIS_API_TOKEN")
-            supplied = authorization.removeprefix("Bearer ") if authorization else ""
-            if not expected or not secrets.compare_digest(supplied, expected):
-                raise HTTPException(status_code=401, detail="valid launch token required")
-
         @api.get("/health")
         def health():
             return {"ok": True, "compute": "modal", "policy_runtime": "pytorch"}
@@ -247,9 +282,17 @@ if MODAL_AVAILABLE:  # pragma: no cover - requires a deployed Modal app
 
         @api.post("/api/matches", status_code=202)
         async def submit(request: Request, authorization: str | None = Header(default=None)):
-            require_token(authorization)
+            authenticated = _valid_launch_token(
+                authorization, os.environ.get("NEMESIS_API_TOKEN")
+            )
+            if authorization and not authenticated:
+                raise HTTPException(status_code=401, detail="invalid launch token")
             try:
                 parsed = MatchRequest.from_dict(await request.json())
+                if not authenticated and parsed.steps > PUBLIC_MAX_STEPS:
+                    raise ValueError(
+                        f"public matches are limited to {PUBLIC_MAX_STEPS} steps"
+                    )
                 available = _catalog()["checkpoints"]
                 for side, reference in (
                     ("red", parsed.red_checkpoint),
@@ -259,6 +302,10 @@ if MODAL_AVAILABLE:  # pragma: no cover - requires a deployed Modal app
                         raise ValueError(f"unknown {side} checkpoint {reference!r}")
             except (TypeError, ValueError, json.JSONDecodeError) as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if not authenticated:
+                rejection = _public_launch_error()
+                if rejection:
+                    raise HTTPException(status_code=429, detail=rejection)
             match_id = uuid.uuid4().hex[:MATCH_ID_LENGTH]
             match_dir = ARENA_PATH / match_id
             match_dir.mkdir(parents=True)
@@ -271,6 +318,7 @@ if MODAL_AVAILABLE:  # pragma: no cover - requires a deployed Modal app
                 "started_at": None,
                 "finished_at": None,
                 "error": None,
+                "access": "admin" if authenticated else "public",
                 "config": payload,
             }
             _write_json(match_dir / "job.json", job)

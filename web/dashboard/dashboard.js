@@ -16,7 +16,11 @@
   const query = new URLSearchParams(window.location.search);
   const requestedApi = query.get("api");
   if (requestedApi) localStorage.setItem("nemesisApiBase", requestedApi);
-  let apiBase = (localStorage.getItem("nemesisApiBase") || "").replace(/\/$/, "");
+  const PUBLIC_API_BY_HOST = {
+    "nemesis-ashen.vercel.app": "https://karthv01--nemesis-dashboard-api.us-east.modal.run",
+  };
+  const publicApiBase = PUBLIC_API_BY_HOST[window.location.hostname] || "";
+  let apiBase = (localStorage.getItem("nemesisApiBase") || publicApiBase).replace(/\/$/, "");
   const apiUrl = (path) => apiBase + path;
   function apiFetch(path, options) {
     const request = Object.assign({}, options || {});
@@ -30,6 +34,11 @@
 
   el("api-base").value = apiBase;
   el("api-token").value = sessionStorage.getItem("nemesisApiToken") || "";
+  if (publicApiBase) {
+    el("api-base").parentElement.hidden = true;
+    el("api-token").parentElement.hidden = true;
+    el("save-connection").hidden = true;
+  }
   el("connection-status").textContent = apiBase ? "checking Modal API" : "local dashboard";
   el("save-connection").onclick = () => {
     const base = el("api-base").value.trim().replace(/\/$/, "");
@@ -219,7 +228,9 @@
     el("connection-status").className = "live";
     const savedToken = sessionStorage.getItem("nemesisApiToken") || "";
     el("connection-status").textContent = apiBase
-      ? `Modal API connected · launch token ${savedToken ? "saved for this tab" : "missing"}`
+      ? publicApiBase && !savedToken
+        ? "Modal API connected · public demo"
+        : `Modal API connected · launch token ${savedToken ? "saved for this tab" : "missing"}`
       : "local API connected";
     const catalog = await response.json();
     el("arena").hidden = false;
@@ -239,12 +250,16 @@
     el("match-format").onchange = toggleRoles; toggleRoles();
     el("match-form").onsubmit = async (event) => {
       event.preventDefault();
-      if (apiBase && !sessionStorage.getItem("nemesisApiToken")) {
+      if (apiBase && !publicApiBase && !sessionStorage.getItem("nemesisApiToken")) {
         setMatchStatus("failed", "enter the launch token above, then save the connection");
         el("api-token").focus();
         return;
       }
       const roleMatch = el("match-format").value === "1v1";
+      if (publicApiBase && !sessionStorage.getItem("nemesisApiToken")) {
+        el("steps").max = "100";
+        if (Number(el("steps").value) > 100) el("steps").value = "100";
+      }
       const payload = {
         red_team: el("red-team").value, blue_team: el("blue-team").value,
         red_checkpoint: el("red-checkpoint").value || null, blue_checkpoint: el("blue-checkpoint").value || null,

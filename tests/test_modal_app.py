@@ -59,6 +59,27 @@ def test_modal_image_keeps_fastapi_runtime_compatible():
     assert "typing_extensions==4.16.0" in RUNTIME_COMPAT_PACKAGES
 
 
+def test_launch_token_validation():
+    assert modal_api._valid_launch_token("Bearer secret", "secret")
+    assert not modal_api._valid_launch_token(None, "secret")
+    assert not modal_api._valid_launch_token("Bearer wrong", "secret")
+
+
+def test_public_launch_limits(monkeypatch, tmp_path):
+    arena = tmp_path / "arena"
+    arena.mkdir()
+    monkeypatch.setattr(modal_api, "ARENA_PATH", arena)
+    assert modal_api._public_launch_error(now=1000) is None
+
+    match = arena / "abc123def456"
+    match.mkdir()
+    (match / "job.json").write_text(
+        json.dumps({"status": "completed", "access": "public", "created_at": 995}),
+        encoding="utf-8",
+    )
+    assert "cooldown" in modal_api._public_launch_error(now=1000)
+
+
 # --------------------------------------------------------------------------- #
 # VolumeBackend == LocalBackend contract (run every storage test against both)
 # --------------------------------------------------------------------------- #
