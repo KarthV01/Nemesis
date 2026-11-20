@@ -6,8 +6,6 @@ require a bearer token from the ``nemesis-api`` Modal Secret; read-only catalog,
 status, replay, and event endpoints may be viewed publicly.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import re
