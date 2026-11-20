@@ -30,8 +30,12 @@ Vercel's public frontend bundle.
 ## 2. Deploy Modal compute and API
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 deploy modal_app/api.py
+powershell -ExecutionPolicy Bypass -File scripts/modal_deploy.ps1
 ```
+
+The deploy wrapper intentionally uses the `modal_app.api` module entrypoint so
+Modal imports the current package source rather than retaining a stale
+file-entrypoint container.
 
 That one deployment registers:
 
