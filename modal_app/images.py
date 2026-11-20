@@ -44,6 +44,7 @@ PIP_PACKAGES = [
     "gymnasium",
     "fastapi[standard]",
 ]
+RUNTIME_COMPAT_PACKAGES = ["typing_extensions==4.16.0"]
 
 #: Repo root and the vendored CybORG submodule (copied into the image at build).
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -87,6 +88,10 @@ def build_image():
             f"pip install -r {CC4_REMOTE_DIR}/Requirements.txt",
             f"pip install -e {CC4_REMOTE_DIR} --config-settings editable_mode=compat",
         )
+        # CC4 pins typing_extensions 4.9, while current FastAPI/AnyIO requires
+        # newer runtime symbols (notably ``sentinel``). CybORG works with the
+        # newer compatible release despite its overly strict metadata pin.
+        .pip_install(*RUNTIME_COMPAT_PACKAGES)
         # The Nemesis code the functions import. Added last so edits to it don't
         # bust the (expensive) dependency layers above.
         .add_local_python_source("nemesis", "modal_app")
@@ -115,6 +120,7 @@ __all__ = [
     "PYTHON_VERSION",
     "TORCH_VERSION",
     "PIP_PACKAGES",
+    "RUNTIME_COMPAT_PACKAGES",
     "CC4_LOCAL_DIR",
     "CC4_REMOTE_DIR",
     "MODAL_AVAILABLE",

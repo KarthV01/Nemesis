@@ -22,7 +22,12 @@ from nemesis.platform.storage import LocalBackend
 
 import modal_app
 import modal_app.api as modal_api
-from modal_app.images import MODAL_AVAILABLE, build_image
+from modal_app.images import (
+    MODAL_AVAILABLE,
+    PIP_PACKAGES,
+    RUNTIME_COMPAT_PACKAGES,
+    build_image,
+)
 from modal_app.volume_backend import VolumeBackend, maybe_commit
 from modal_app.train import (
     DummyTeamEnv,
@@ -47,6 +52,11 @@ def test_package_imports_without_modal():
         assert modal_app.app is None and modal_app.image is None and modal_app.volume is None
         with pytest.raises(RuntimeError):
             build_image()
+
+
+def test_modal_image_keeps_fastapi_runtime_compatible():
+    assert "fastapi[standard]" in PIP_PACKAGES
+    assert "typing_extensions==4.16.0" in RUNTIME_COMPAT_PACKAGES
 
 
 # --------------------------------------------------------------------------- #
