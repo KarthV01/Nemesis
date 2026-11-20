@@ -51,6 +51,14 @@ powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 run scripts/
 No training happens on the laptop. The local process submits the job and shows
 logs; checkpoints remain on the Modal Volume.
 
+For a durable background run that continues after the local terminal exits,
+launch the already-deployed function asynchronously:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/modal_with_env.ps1 run scripts/modal_launch.py `
+  --run-id selfplay-prod --generations 5 --blue-steps 4000 --red-steps 4000
+```
+
 ## 3. Deploy the static dashboard to Vercel
 
 The repository's `vercel.json` skips a build and publishes `web/dashboard`.
